@@ -1,7 +1,7 @@
 # Семейный учёт расходов: Telegram-бот с ИИ-агентом и веб-панель — дизайн
 
 - **Дата:** 2026-10-15
-- **Статус:** на ревью
+- **Статус:** утверждена; уточнена при проверке планов реализации (см. «Изменения после планирования»)
 - **Исходное ТЗ:** тестовое задание «ИИ-бот учёта расходов» (5 рабочих дней)
 
 ## 1. Цель и критерии успеха
@@ -74,7 +74,8 @@ backend/
     events/                   in-process pub/sub
   migrations/                 goose, применяются при старте
 frontend/                     React + Vite + TypeScript
-evals/                        cases.yaml, раннер, отчёты
+  evals/                      cases.yaml и отчёты (внутри модуля backend — раннеру нужны internal-пакеты)
+  cmd/eval/                   CLI прогона evals
 docs/
   superpowers/specs|plans/    спеки и планы
   adr/                        architecture decision records
@@ -113,7 +114,7 @@ CREATE TABLE expenses (
   category    TEXT   NOT NULL CHECK (category IN
                 ('food','transport','housing','entertainment','health','shopping','other')),
   spent_at    DATE   NOT NULL,
-  comment     TEXT,
+  comment     TEXT   NOT NULL DEFAULT '',            -- пустая строка = нет комментария
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -123,8 +124,7 @@ CREATE INDEX expenses_spent_idx      ON expenses (spent_at DESC);
 CREATE TABLE chat_messages (
   id          BIGSERIAL PRIMARY KEY,
   user_id     BIGINT NOT NULL REFERENCES members(telegram_id),
-  role        TEXT   NOT NULL,          -- user | assistant | tool
-  content     JSONB  NOT NULL,          -- сообщение в формате chat completions, включая tool_calls
+  content     JSONB  NOT NULL,          -- сообщение в формате chat completions (role, content, tool_calls)
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX chat_messages_user_idx ON chat_messages (user_id, created_at DESC);
@@ -271,13 +271,13 @@ Delete(ctx, scope Scope, id int64) (Expense, error)  // возвращает у�
 
 ## 9. Веб-панель
 
-Стек: React 18, Vite, TypeScript, TanStack Query, shadcn/ui (Tailwind), Recharts, react-hook-form + zod, клиент `openapi-fetch` с типами из `openapi-typescript`.
+Стек: React 19, Vite, TypeScript, TanStack Query, shadcn/ui (Tailwind), Recharts, react-hook-form + zod, клиент `openapi-fetch` с типами из `openapi-typescript`.
 
 **Вкладка «Траты»**
 
 - Фильтры: период (пресеты: эта неделя, этот месяц, прошлый месяц, 30 дней, произвольный диапазон), член семьи (все / один), категория (все / одна). Состояние фильтров — в URL.
 - KPI: сумма за период, количество трат, среднее в день, изменение к прошлому периоду.
-- Графики: donut по категориям; столбцы по дням с разбивкой по членам семьи.
+- Графики: горизонтальные столбцы по категориям (один цвет, подписи значений — для 7 классов donut нечитаем); столбцы по дням с разбивкой по членам семьи (категориальная палитра в фиксированном порядке, легенда, тултип).
 - Таблица: дата, член семьи, категория (цветной бейдж), сумма, комментарий, действия; сортировка по дате; пагинация.
 - Создание/редактирование — модальное окно; удаление — с подтверждением.
 - SSE: на событие — инвалидация запросов, toast «Мама: кофе — 350 ₽», подсветка строки; автопереподключение.
@@ -324,13 +324,13 @@ SEED_DEMO=false
 
 - **Юнит:** парсинг/форматирование `Money`; `ResolvePeriod` (табличные тесты, фиксированное время, границы недели/месяца, таймзона); цикл агента с фейковым `llm.Client`, выдающим заданную последовательность ответов (диспетчеризация, параллельные вызовы, лимит итераций, ошибки инструментов возвращаются модели, `user_id` из контекста); валидация аргументов инструментов; фейковый `Transcriber` для пути голосовых в боте.
 - **Интеграционные (testcontainers, Postgres):** store; `expense.Service`; HTTP-хендлеры через `httptest`; **тест изоляции** — пользователь A не может прочитать/изменить/удалить трату B через сервис со scope и через инструменты агента.
-- **Фронтенд:** `tsc --noEmit`, ESLint, `vite build`.
+- **Фронтенд:** Vitest для чистой логики (форматирование денег и дат, пресеты периодов, состояние фильтров в URL), `tsc`, ESLint, `vite build`.
 
 ## 13. Evals
 
-- `evals/cases.yaml`, ~80 кейсов: `{name, group, history?, input, expect}`; `expect` — ожидаемые вызовы инструментов с матчерами аргументов (точное значение, enum, «любое», дата относительно фиксированного «сегодня») либо `ask: true` (ожидается уточняющий вопрос без мутаций).
+- `backend/evals/cases.yaml`, 45 кейсов: `{name, group, history?, input, expect}`. Проверяется **результат**, а не форма вызова: `expect` описывает, какие траты созданы/изменены/удалены (по ключам фикстуры), что должно и не должно быть в ответе, `ask: true` — уточняющий вопрос. Отсутствие ожидаемых изменений = любые изменения запрещены. Мир кейса: свежий in-memory репозиторий, фиксированное «сейчас» 2026-10-15 12:00 МСК, траты двух членов семьи.
 - Группы: добавление, просмотр и сводки, изменение, удаление, неоднозначность, числа словами, prompt injection / чужие данные, нерелевантные запросы.
-- Раннер: `make eval MODEL=...` — реальная LLM через OpenRouter, in-memory реализация хранилища с сидом, зафиксированное время. Отчёт — `evals/results/<model>.md` (точность по группам, средняя задержка, токены/стоимость, список провалов).
+- Раннер: `make eval MODEL=...` — реальная LLM через OpenRouter. Отчёт — `backend/evals/results/<model>.md` (точность по группам, средняя задержка, токены/стоимость, разбор провалов) и сводная таблица моделей `backend/evals/results/README.md`.
 - Не входит в CI (стоит денег); запуск вручную или `workflow_dispatch`.
 
 ## 14. CI
@@ -358,3 +358,13 @@ GitHub Actions на push/PR:
 | Выбранная модель плохо делает tool calling на русском | Evals на 3–4 моделях до фиксации дефолта |
 | Не уложиться в 5 дней | Порядок работ: ядро и бот → панель → голосовые → evals-отчёт → полировка; голосовые и журнал агента отрезаемы без поломки остального |
 | Ревьюер без ключа OpenRouter | Чёткий README; при наличии времени — опциональный профиль Ollama (вне базового скоупа) |
+
+## Изменения после планирования
+
+Код планов был собран и прогнан до реализации; по итогам спека уточнена:
+
+- React 19 вместо 18 (актуальная версия на момент планирования).
+- График категорий — горизонтальные столбцы вместо donut (правила dataviz: donut — не более 6 сегментов и не для близких значений).
+- `expenses.comment` — `NOT NULL DEFAULT ''` вместо NULL; `chat_messages` хранит роль внутри JSON.
+- Evals проверяют результат (дифф состояния и ответ), а не точные аргументы инструментов; 45 кейсов; находятся в `backend/evals`.
+- Фронтенд покрыт юнит-тестами Vitest для чистой логики.
