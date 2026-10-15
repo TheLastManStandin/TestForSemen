@@ -133,11 +133,11 @@ func (r *Repo) Count(_ context.Context, q expense.ListQuery) (int, domain.Money,
 	return len(matched), sum, nil
 }
 
-func (r *Repo) Update(_ context.Context, e domain.Expense) (domain.Expense, error) {
+func (r *Repo) Update(_ context.Context, e domain.Expense, owner *int64) (domain.Expense, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	cur, ok := r.items[e.ID]
-	if !ok {
+	if !ok || (owner != nil && cur.UserID != *owner) {
 		return domain.Expense{}, domain.ErrNotFound
 	}
 	name, ok := r.members[e.UserID]
@@ -151,10 +151,10 @@ func (r *Repo) Update(_ context.Context, e domain.Expense) (domain.Expense, erro
 	return e, nil
 }
 
-func (r *Repo) Delete(_ context.Context, id int64) error {
+func (r *Repo) Delete(_ context.Context, id int64, owner *int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.items[id]; !ok {
+	if cur, ok := r.items[id]; !ok || (owner != nil && cur.UserID != *owner) {
 		return domain.ErrNotFound
 	}
 	delete(r.items, id)

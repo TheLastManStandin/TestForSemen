@@ -70,11 +70,18 @@ func (q *Queries) AggregateExpenses(ctx context.Context, arg AggregateExpensesPa
 }
 
 const deleteExpense = `-- name: DeleteExpense :execrows
-DELETE FROM expenses WHERE id = $1
+DELETE FROM expenses
+WHERE id = $1
+  AND ($2::bigint IS NULL OR user_id = $2)
 `
 
-func (q *Queries) DeleteExpense(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpense, id)
+type DeleteExpenseParams struct {
+	ID      int64
+	OwnerID *int64
+}
+
+func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteExpense, arg.ID, arg.OwnerID)
 	if err != nil {
 		return 0, err
 	}
@@ -293,8 +300,10 @@ func (q *Queries) SummarizeExpenses(ctx context.Context, arg SummarizeExpensesPa
 const updateExpense = `-- name: UpdateExpense :one
 WITH upd AS (
   UPDATE expenses SET
-    user_id = $2, amount = $3, category = $4, spent_at = $5, comment = $6, updated_at = now()
-  WHERE expenses.id = $1
+    user_id = $1, amount = $2, category = $3,
+    spent_at = $4, comment = $5, updated_at = now()
+  WHERE expenses.id = $6
+    AND ($7::bigint IS NULL OR expenses.user_id = $7)
   RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at
 )
 SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd.spent_at,
@@ -303,12 +312,13 @@ FROM upd JOIN members m ON m.telegram_id = upd.user_id
 `
 
 type UpdateExpenseParams struct {
-	ID       int64
 	UserID   int64
 	Amount   int64
 	Category string
 	SpentAt  time.Time
 	Comment  string
+	ID       int64
+	OwnerID  *int64
 }
 
 type UpdateExpenseRow struct {
@@ -325,12 +335,13 @@ type UpdateExpenseRow struct {
 
 func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (UpdateExpenseRow, error) {
 	row := q.db.QueryRow(ctx, updateExpense,
-		arg.ID,
 		arg.UserID,
 		arg.Amount,
 		arg.Category,
 		arg.SpentAt,
 		arg.Comment,
+		arg.ID,
+		arg.OwnerID,
 	)
 	var i UpdateExpenseRow
 	err := row.Scan(

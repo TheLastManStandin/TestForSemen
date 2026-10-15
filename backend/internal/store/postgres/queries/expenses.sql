@@ -41,8 +41,10 @@ WHERE (sqlc.narg(user_id)::bigint IS NULL OR e.user_id = sqlc.narg(user_id))
 -- name: UpdateExpense :one
 WITH upd AS (
   UPDATE expenses SET
-    user_id = $2, amount = $3, category = $4, spent_at = $5, comment = $6, updated_at = now()
-  WHERE expenses.id = $1
+    user_id = sqlc.arg(user_id), amount = sqlc.arg(amount), category = sqlc.arg(category),
+    spent_at = sqlc.arg(spent_at), comment = sqlc.arg(comment), updated_at = now()
+  WHERE expenses.id = sqlc.arg(id)
+    AND (sqlc.narg(owner_id)::bigint IS NULL OR expenses.user_id = sqlc.narg(owner_id))
   RETURNING *
 )
 SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd.spent_at,
@@ -50,7 +52,9 @@ SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd
 FROM upd JOIN members m ON m.telegram_id = upd.user_id;
 
 -- name: DeleteExpense :execrows
-DELETE FROM expenses WHERE id = $1;
+DELETE FROM expenses
+WHERE id = sqlc.arg(id)
+  AND (sqlc.narg(owner_id)::bigint IS NULL OR user_id = sqlc.narg(owner_id));
 
 -- name: AggregateExpenses :many
 SELECT e.spent_at, e.user_id, m.name AS member_name, e.category,

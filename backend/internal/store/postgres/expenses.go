@@ -66,9 +66,9 @@ func (s *Store) Count(ctx context.Context, q expense.ListQuery) (int, domain.Mon
 	return int(row.Cnt), domain.Money(row.Total), nil
 }
 
-func (s *Store) Update(ctx context.Context, e domain.Expense) (domain.Expense, error) {
+func (s *Store) Update(ctx context.Context, e domain.Expense, owner *int64) (domain.Expense, error) {
 	row, err := s.q.UpdateExpense(ctx, db.UpdateExpenseParams{
-		ID: e.ID, UserID: e.UserID, Amount: int64(e.Amount), Category: string(e.Category), SpentAt: e.SpentAt, Comment: e.Comment,
+		ID: e.ID, UserID: e.UserID, Amount: int64(e.Amount), Category: string(e.Category), SpentAt: e.SpentAt, Comment: e.Comment, OwnerID: owner,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return domain.Expense{}, domain.ErrNotFound
@@ -79,8 +79,8 @@ func (s *Store) Update(ctx context.Context, e domain.Expense) (domain.Expense, e
 	return fromRow(db.GetExpenseRow(row)), nil
 }
 
-func (s *Store) Delete(ctx context.Context, id int64) error {
-	n, err := s.q.DeleteExpense(ctx, id)
+func (s *Store) Delete(ctx context.Context, id int64, owner *int64) error {
+	n, err := s.q.DeleteExpense(ctx, db.DeleteExpenseParams{ID: id, OwnerID: owner})
 	if err != nil {
 		return fmt.Errorf("delete expense: %w", err)
 	}

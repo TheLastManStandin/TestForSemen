@@ -207,7 +207,7 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		e.SpentAt = Date("2026-10-11")
 		e.Comment = "обед"
 		e.UserID = Mama.TelegramID
-		upd, err := r.Update(ctx, e)
+		upd, err := r.Update(ctx, e, nil)
 		require.NoError(t, err)
 		assert.Equal(t, domain.Money(45000), upd.Amount)
 		assert.Equal(t, domain.CategoryOther, upd.Category)
@@ -221,7 +221,7 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		require.NoError(t, err)
 		assert.Equal(t, domain.Money(45000), got.Amount)
 
-		_, err = r.Update(ctx, domain.Expense{ID: 9999, UserID: Papa.TelegramID, Amount: 1, Category: domain.CategoryFood, SpentAt: Date("2026-10-10")})
+		_, err = r.Update(ctx, domain.Expense{ID: 9999, UserID: Papa.TelegramID, Amount: 1, Category: domain.CategoryFood, SpentAt: Date("2026-10-10")}, nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 
@@ -229,10 +229,42 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		r := setup(t)
 		e := insert(t, r, Papa.TelegramID, 100, domain.CategoryOther, "2026-10-10", "")
 
-		require.NoError(t, r.Delete(ctx, e.ID))
+		require.NoError(t, r.Delete(ctx, e.ID, nil))
 		_, err := r.Get(ctx, e.ID, nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		assert.ErrorIs(t, r.Delete(ctx, e.ID), domain.ErrNotFound)
+		assert.ErrorIs(t, r.Delete(ctx, e.ID, nil), domain.ErrNotFound)
+	})
+
+	t.Run("update and delete respect owner", func(t *testing.T) {
+		r := setup(t)
+		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
+		papa, mama := Papa.TelegramID, Mama.TelegramID
+
+		changed := e
+		changed.Amount = 99900
+		changed.Comment = "чужое"
+		_, err := r.Update(ctx, changed, &mama)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+		assert.ErrorIs(t, r.Delete(ctx, e.ID, &mama), domain.ErrNotFound)
+
+		got, err := r.Get(ctx, e.ID, nil)
+		require.NoError(t, err)
+		assert.Equal(t, domain.Money(35000), got.Amount)
+		assert.Equal(t, "кофе", got.Comment)
+		assert.Equal(t, Papa.TelegramID, got.UserID)
+
+		// owner is checked against the current row, so the owner may reassign it
+		changed.UserID = mama
+		upd, err := r.Update(ctx, changed, &papa)
+		require.NoError(t, err)
+		assert.Equal(t, mama, upd.UserID)
+		assert.Equal(t, domain.Money(99900), upd.Amount)
+
+		// now it belongs to mama: papa can no longer touch it
+		assert.ErrorIs(t, r.Delete(ctx, e.ID, &papa), domain.ErrNotFound)
+		require.NoError(t, r.Delete(ctx, e.ID, &mama))
+		_, err = r.Get(ctx, e.ID, nil)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 
 	t.Run("aggregate", func(t *testing.T) {

@@ -54,9 +54,11 @@ type Repository interface {
 	// Count returns the number and sum of expenses matching q, ignoring Limit and Offset.
 	Count(ctx context.Context, q ListQuery) (int, domain.Money, error)
 	// Update replaces all mutable fields of the expense with ID e.ID and refreshes UpdatedAt.
-	Update(ctx context.Context, e domain.Expense) (domain.Expense, error)
-	// Delete returns domain.ErrNotFound if the expense is missing.
-	Delete(ctx context.Context, id int64) error
+	// Returns domain.ErrNotFound if the expense is missing or owner != nil and the stored row
+	// belongs to someone else (checked atomically against the current row).
+	Update(ctx context.Context, e domain.Expense, owner *int64) (domain.Expense, error)
+	// Delete returns domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone else.
+	Delete(ctx context.Context, id int64, owner *int64) error
 	// Aggregate groups by (date, user, category) and orders rows the same way.
 	Aggregate(ctx context.Context, q AggQuery) ([]AggRow, error)
 }
