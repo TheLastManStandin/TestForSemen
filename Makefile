@@ -30,7 +30,7 @@ gen-api:
 	cd backend && go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
 
 gen-web:
-	cd frontend && npx openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts
+	npm --prefix frontend run gen:api
 
 eval:
 	cd backend && go run ./cmd/eval -model "$(MODEL)"
