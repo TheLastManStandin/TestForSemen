@@ -2,10 +2,13 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	tgbot "github.com/go-telegram/bot"
@@ -17,15 +20,21 @@ const maxFileBytes = 20 << 20 // Telegram bot API download limit
 // Telegram adapts go-telegram/bot to Messenger and feeds updates to a Handler.
 type Telegram struct {
 	b       *tgbot.Bot
+	token   string
 	http    *http.Client
 	handler *Handler
 	log     *slog.Logger
 }
 
 // NewTelegram creates the client; it calls getMe, so an invalid token fails fast.
-func NewTelegram(token string, log *slog.Logger) (*Telegram, error) {
-	t := &Telegram{http: &http.Client{Timeout: 60 * time.Second}, log: log}
-	b, err := tgbot.New(token, tgbot.WithDefaultHandler(t.onUpdate))
+// Extra options are applied after the defaults (used by tests to point at a fake server).
+func NewTelegram(token string, log *slog.Logger, opts ...tgbot.Option) (*Telegram, error) {
+	t := &Telegram{token: token, http: &http.Client{Timeout: 60 * time.Second}, log: log}
+	opts = append([]tgbot.Option{
+		tgbot.WithDefaultHandler(t.onUpdate),
+		tgbot.WithErrorsHandler(func(err error) { log.Error("telegram", "err", err) }),
+	}, opts...)
+	b, err := tgbot.New(token, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("telegram: %w", err)
 	}
@@ -41,7 +50,12 @@ func (t *Telegram) Start(ctx context.Context) { t.b.Start(ctx) }
 
 func (t *Telegram) onUpdate(ctx context.Context, _ *tgbot.Bot, u *models.Update) {
 	in, ok := toIncoming(u)
-	if !ok || t.handler == nil {
+	if !ok {
+		t.log.Debug("update dropped", "update_id", u.ID)
+		return
+	}
+	t.log.Debug("update", "update_id", u.ID, "user_id", in.UserID, "chat_id", in.ChatID)
+	if t.handler == nil {
 		return
 	}
 	t.handler.Handle(ctx, in)
@@ -76,11 +90,11 @@ func (t *Telegram) DownloadFile(ctx context.Context, fileID string) ([]byte, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, t.b.FileDownloadLink(f), nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("download file: %w", t.redact(err))
 	}
 	resp, err := t.http.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("download file: %w", err)
+		return nil, fmt.Errorf("download file: %w", t.redact(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -94,6 +108,15 @@ func (t *Telegram) DownloadFile(ctx context.Context, fileID string) ([]byte, err
 		return nil, fmt.Errorf("file larger than %d bytes", maxFileBytes)
 	}
 	return data, nil
+}
+
+// redact hides the bot token that the file download URL embeds in *url.Error.
+func (t *Telegram) redact(err error) error {
+	var ue *url.Error
+	if errors.As(err, &ue) {
+		ue.URL = strings.ReplaceAll(ue.URL, t.token, "***")
+	}
+	return err
 }
 
 var _ Messenger = (*Telegram)(nil)
