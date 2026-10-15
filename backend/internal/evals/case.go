@@ -44,12 +44,13 @@ type ExpenseMatch struct {
 	Comment  string `yaml:"comment"` // case-insensitive substring
 }
 
-// UpdateMatch matches the new state of a seeded expense.
+// UpdateMatch matches the new state of a seeded expense; fields left unset must stay unchanged.
 type UpdateMatch struct {
 	Key      string `yaml:"key"`
 	Amount   string `yaml:"amount"`
 	Category string `yaml:"category"`
 	Date     string `yaml:"date"`
+	Comment  string `yaml:"comment"` // substring; unset = comment must stay unchanged
 }
 
 // LoadCases reads and structurally validates a cases file.

@@ -16,7 +16,7 @@ type Outcome struct {
 	Tools []string
 }
 
-var replyNormalizer = strings.NewReplacer(" ", " ", " ", " ", "ё", "е", "Ё", "е")
+var replyNormalizer = strings.NewReplacer("\u00a0", " ", "\u202f", " ", "ё", "е", "Ё", "е")
 
 func normalize(s string) string { return strings.ToLower(replyNormalizer.Replace(s)) }
 
@@ -63,7 +63,7 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 			fail("неожиданно изменена трата %s", describe(ch.Before))
 			continue
 		}
-		if err := matchUpdated(u, ch.After, today); err != nil {
+		if err := matchUpdated(u, ch.Before, ch.After, today); err != nil {
 			fail("трата %s: %v (стало: %s)", u.Key, err, describe(ch.After))
 		}
 	}
@@ -140,27 +140,45 @@ func matchCreated(m ExpenseMatch, e domain.Expense, today time.Time) error {
 	return nil
 }
 
-func matchUpdated(u UpdateMatch, e domain.Expense, today time.Time) error {
+// matchUpdated requires the listed fields to hold the expected values and every other
+// field (and the owner) to stay as it was.
+func matchUpdated(u UpdateMatch, before, after domain.Expense, today time.Time) error {
+	if after.UserID != before.UserID {
+		return fmt.Errorf("изменён владелец траты")
+	}
+	wantAmount := before.Amount
 	if u.Amount != "" {
-		amount, err := domain.ParseMoney(u.Amount)
-		if err != nil {
+		var err error
+		if wantAmount, err = domain.ParseMoney(u.Amount); err != nil {
 			return err
 		}
-		if e.Amount != amount {
-			return fmt.Errorf("сумма %s, ожидалось %s", e.Amount.Human(), amount.Human())
-		}
 	}
-	if u.Category != "" && string(e.Category) != u.Category {
-		return fmt.Errorf("категория %s, ожидалось %s", e.Category, u.Category)
+	if after.Amount != wantAmount {
+		return fmt.Errorf("сумма %s, ожидалось %s", after.Amount.Human(), wantAmount.Human())
 	}
+	wantCategory := string(before.Category)
+	if u.Category != "" {
+		wantCategory = u.Category
+	}
+	if string(after.Category) != wantCategory {
+		return fmt.Errorf("категория %s, ожидалось %s", after.Category, wantCategory)
+	}
+	wantDate := before.SpentAt
 	if u.Date != "" {
-		d, err := ResolveDate(u.Date, today)
-		if err != nil {
+		var err error
+		if wantDate, err = ResolveDate(u.Date, today); err != nil {
 			return err
 		}
-		if !e.SpentAt.Equal(d) {
-			return fmt.Errorf("дата %s, ожидалось %s", domain.FormatDate(e.SpentAt), domain.FormatDate(d))
+	}
+	if !after.SpentAt.Equal(wantDate) {
+		return fmt.Errorf("дата %s, ожидалось %s", domain.FormatDate(after.SpentAt), domain.FormatDate(wantDate))
+	}
+	if u.Comment != "" {
+		if !strings.Contains(normalize(after.Comment), normalize(u.Comment)) {
+			return fmt.Errorf("комментарий %q, ожидалось %q", after.Comment, u.Comment)
 		}
+	} else if after.Comment != before.Comment {
+		return fmt.Errorf("комментарий изменён: %q", after.Comment)
 	}
 	return nil
 }

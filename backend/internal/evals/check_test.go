@@ -94,6 +94,31 @@ func TestCheckUpdatedAndDeleted(t *testing.T) {
 	assert.NotEmpty(t, Check(del, s, Outcome{Diff: Diff{Deleted: []domain.Expense{s["taxi_sep"]}}}, today))
 }
 
+func TestCheckUpdatedRejectsSideEffects(t *testing.T) {
+	s := seeded(t)
+	before := s["coffee_today"]
+	exp := Expect{Updated: []UpdateMatch{{Key: "coffee_today", Amount: "450"}}}
+	run := func(exp Expect, mutate func(*domain.Expense)) []string {
+		after := before
+		after.Amount = 45000
+		mutate(&after)
+		return Check(exp, s, Outcome{Diff: Diff{Updated: []Change{{Before: before, After: after}}}}, today)
+	}
+
+	assert.Empty(t, run(exp, func(*domain.Expense) {}))
+	assert.NotEmpty(t, run(exp, func(e *domain.Expense) { e.Category = domain.CategoryOther }), "category also changed")
+	assert.NotEmpty(t, run(exp, func(e *domain.Expense) { e.Comment = "другое" }), "comment also changed")
+	assert.NotEmpty(t, run(exp, func(e *domain.Expense) { e.SpentAt = e.SpentAt.AddDate(0, 0, -1) }), "date also changed")
+	assert.NotEmpty(t, run(exp, func(e *domain.Expense) { e.UserID = 222 }), "owner changed")
+
+	commentExp := Expect{Updated: []UpdateMatch{{Key: "coffee_today", Amount: "450", Comment: "капучино"}}}
+	assert.Empty(t, run(commentExp, func(e *domain.Expense) { e.Comment = "Капучино" }), "expected comment change")
+	assert.NotEmpty(t, run(commentExp, func(*domain.Expense) {}), "expected comment not set")
+
+	noop := Expect{Updated: []UpdateMatch{{Key: "coffee_today"}}}
+	assert.NotEmpty(t, run(noop, func(*domain.Expense) {}), "empty UpdateMatch no longer accepts any change")
+}
+
 func TestCheckNormalizesReply(t *testing.T) {
 	s := seeded(t)
 	exp := Expect{ReplyContains: []string{"4 400"}, ReplyNotContains: []string{"платье"}, Ask: false}
