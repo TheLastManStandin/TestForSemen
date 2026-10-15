@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { splitFieldErrors } from "@/lib/formErrors";
 import { CATEGORY_CODES, CATEGORY_LABELS, normalizeAmount } from "@/lib/format";
 import { todayISO } from "@/lib/period";
 
@@ -70,11 +71,10 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
       }
       onOpenChange(false);
     } catch (err) {
-      const fields = fieldErrors(err);
-      for (const [field, message] of Object.entries(fields)) {
-        if (field in schema.shape) form.setError(field as keyof FormValues, { message });
-      }
-      if (Object.keys(fields).length === 0) toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
+      const { placed, unplaced } = splitFieldErrors(fieldErrors(err), Object.keys(schema.shape));
+      for (const [field, message] of placed) form.setError(field as keyof FormValues, { message });
+      if (unplaced.length > 0) toast.error(unplaced.join("; "));
+      else if (placed.length === 0) toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
     }
   });
 

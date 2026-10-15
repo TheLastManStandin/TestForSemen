@@ -39,7 +39,7 @@ export function DeleteExpenseDialog({ expense, onClose }: Props) {
           <AlertDialogTitle>Удалить трату?</AlertDialogTitle>
           <AlertDialogDescription>
             {expense &&
-              `${expense.member_name}: «${expense.comment ?? CATEGORY_LABELS[expense.category]}» на ${formatMoney(expense.amount)}, ${formatDate(expense.spent_at, todayISO())}. Это действие нельзя отменить.`}
+              `${expense.member_name}: «${expense.comment || CATEGORY_LABELS[expense.category]}» на ${formatMoney(expense.amount)}, ${formatDate(expense.spent_at, todayISO())}. Это действие нельзя отменить.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
