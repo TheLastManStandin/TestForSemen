@@ -37,6 +37,20 @@ func reportFileName(model, filter string) string {
 	return evals.Slug(model) + ".md"
 }
 
+// checkWritable decides whether a finished run may overwrite reports: not when it
+// was interrupted, and not when every case failed on infrastructure (provider down).
+func checkWritable(ctxErr error, results []evals.Result) error {
+	if ctxErr != nil {
+		return fmt.Errorf("run interrupted, reports not written: %w", ctxErr)
+	}
+	for _, r := range results {
+		if r.Err == "" {
+			return nil
+		}
+	}
+	return fmt.Errorf("every case failed with an infrastructure error (first: %s), reports not written", results[0].Err)
+}
+
 func run(model, casesPath, outDir string, parallel int, filter string) error {
 	if model == "" {
 		return fmt.Errorf("set -model or LLM_MODEL")
@@ -64,6 +78,9 @@ func run(model, casesPath, outDir string, parallel int, filter string) error {
 	fmt.Printf("Running %d cases on %s…\n", len(cases), model)
 	started := time.Now()
 	results := (&evals.Runner{LLM: client, Model: model, Parallel: parallel}).Run(ctx, cases)
+	if err := checkWritable(ctx.Err(), results); err != nil {
+		return err
+	}
 	summary := evals.Summarize(model, results)
 
 	if err := os.MkdirAll(outDir, 0o755); err != nil {

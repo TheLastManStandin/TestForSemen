@@ -108,42 +108,71 @@ func RenderReport(s Summary, results []Result, at time.Time) string {
 
 const summaryHeader = "# Сравнение моделей\n\nГенерируется `make eval`. Модель по умолчанию — лучшая по проценту прохождения, затем по стоимости и задержке.\n\n| Модель | Пройдено | Задержка | Стоимость прогона |\n|---|---|---|---|\n"
 
-// UpdateSummaryFile inserts or replaces the model's row in the comparison table, sorted by pass rate.
+// summaryRow is one parsed line of the comparison table.
+type summaryRow struct {
+	model   string
+	line    string
+	rate    float64
+	latency float64
+	cost    float64
+}
+
+func parseSummaryRow(line string) (summaryRow, bool) {
+	cells := strings.Split(line, "|")
+	if len(cells) < 6 {
+		return summaryRow{}, false
+	}
+	row := summaryRow{line: line, model: strings.Trim(strings.TrimSpace(cells[1]), "`")}
+	var passed, total int
+	if _, err := fmt.Sscanf(cells[2][strings.LastIndex(cells[2], "(")+1:], "%d/%d", &passed, &total); err == nil && total > 0 {
+		row.rate = float64(passed) / float64(total)
+	}
+	fmt.Sscanf(strings.TrimSpace(cells[3]), "%f", &row.latency)
+	fmt.Sscanf(strings.TrimPrefix(strings.TrimSpace(cells[4]), "$"), "%f", &row.cost)
+	return row, row.model != ""
+}
+
+// UpdateSummaryFile inserts or replaces the model's row in the comparison table.
+// Rows are sorted by pass rate (desc), then cost (asc), latency (asc) and name.
 func UpdateSummaryFile(path string, s Summary) error {
-	rows := map[string]string{}
-	rates := map[string]float64{}
+	rows := map[string]summaryRow{}
 	if data, err := os.ReadFile(path); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
 			if !strings.HasPrefix(line, "| `") {
 				continue
 			}
-			model := strings.SplitN(strings.TrimPrefix(line, "| `"), "`", 2)[0]
-			rows[model] = line
-			var passed, total int
-			if _, err := fmt.Sscanf(strings.Split(line, "(")[1], "%d/%d", &passed, &total); err == nil && total > 0 {
-				rates[model] = float64(passed) / float64(total)
+			if row, ok := parseSummaryRow(line); ok {
+				rows[row.model] = row
 			}
 		}
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	rows[s.Model] = fmt.Sprintf("| `%s` | %.1f%% (%d/%d) | %.1f с | $%.4f |", s.Model, s.PassRate(), s.Passed, s.Total, s.AvgLatency.Seconds(), s.Cost)
-	rates[s.Model] = s.PassRate() / 100
-
-	models := make([]string, 0, len(rows))
-	for m := range rows {
-		models = append(models, m)
+	line := fmt.Sprintf("| `%s` | %.1f%% (%d/%d) | %.1f с | $%.4f |", s.Model, s.PassRate(), s.Passed, s.Total, s.AvgLatency.Seconds(), s.Cost)
+	if row, ok := parseSummaryRow(line); ok {
+		rows[s.Model] = row
 	}
-	sort.Slice(models, func(i, j int) bool {
-		if rates[models[i]] != rates[models[j]] {
-			return rates[models[i]] > rates[models[j]]
+
+	sorted := make([]summaryRow, 0, len(rows))
+	for _, r := range rows {
+		sorted = append(sorted, r)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		a, b := sorted[i], sorted[j]
+		switch {
+		case a.rate != b.rate:
+			return a.rate > b.rate
+		case a.cost != b.cost:
+			return a.cost < b.cost
+		case a.latency != b.latency:
+			return a.latency < b.latency
 		}
-		return models[i] < models[j]
+		return a.model < b.model
 	})
 	var b strings.Builder
 	b.WriteString(summaryHeader)
-	for _, m := range models {
-		b.WriteString(rows[m] + "\n")
+	for _, r := range sorted {
+		b.WriteString(r.line + "\n")
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
 }

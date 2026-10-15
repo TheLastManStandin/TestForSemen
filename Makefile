@@ -39,7 +39,7 @@ gen-web:
 EVAL_MODELS := anthropic/claude-haiku-5.5 openai/gpt-6-luna google/gemini-3.8-flash deepseek/deepseek-v4.1-flash qwen/qwen3.8-omni-flash
 
 eval:
-	cd backend && set -a && [ ! -f ../.env ] || . ../.env; set +a; go run ./cmd/eval $(if $(MODEL),-model "$(MODEL)")
+	cd backend && { [ ! -f ../.env ] || { set -a; . ../.env; set +a; }; } && go run ./cmd/eval $(if $(MODEL),-model "$(MODEL)")
 
 eval-all:
 	for m in $(EVAL_MODELS); do $(MAKE) eval MODEL=$$m || exit 1; done

@@ -56,6 +56,25 @@ func TestUpdateSummaryFile(t *testing.T) {
 	assert.Less(t, strings.Index(text, "m/one"), strings.Index(text, "m/two"), "sorted by pass rate")
 }
 
+func TestUpdateSummaryFileTieBreak(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "README.md")
+	s := func(m string, cost float64, lat time.Duration) Summary {
+		return Summary{Model: m, Total: 10, Passed: 10, AvgLatency: lat, Cost: cost}
+	}
+	require.NoError(t, UpdateSummaryFile(path, s("m/pricey", 0.14, time.Second)))
+	require.NoError(t, UpdateSummaryFile(path, s("m/slow", 0.01, 5*time.Second)))
+	require.NoError(t, UpdateSummaryFile(path, s("m/fast", 0.01, 2*time.Second)))
+	require.NoError(t, UpdateSummaryFile(path, Summary{Model: "m/worse", Total: 10, Passed: 9, Cost: 0.001}))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	text := string(data)
+	order := []string{"m/fast", "m/slow", "m/pricey", "m/worse"}
+	for i := 1; i < len(order); i++ {
+		assert.Less(t, strings.Index(text, order[i-1]), strings.Index(text, order[i]), "%s before %s", order[i-1], order[i])
+	}
+}
+
 func TestSlug(t *testing.T) {
 	assert.Equal(t, "anthropic_claude-haiku-5.5", Slug("anthropic/claude-haiku-5.5"))
 	assert.Equal(t, "x_y_free", Slug("x/y:free"))
