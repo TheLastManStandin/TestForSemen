@@ -122,3 +122,67 @@ func TestUsageAdd(t *testing.T) {
 	u.Add(llm.Usage{PromptTokens: 10, CompletionTokens: 20, Cost: 0.25})
 	assert.Equal(t, llm.Usage{PromptTokens: 11, CompletionTokens: 22, Cost: 0.75}, u)
 }
+
+func TestChatRetriesOn429(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if calls.Add(1) == 1 {
+			http.Error(w, "slow down", http.StatusTooManyRequests)
+			return
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	resp, err := newClient(srv.URL, 2).Chat(t.Context(), llm.ChatRequest{Model: "m"})
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp.Message.Content)
+	assert.Equal(t, int32(2), calls.Load())
+}
+
+func TestChatRetryExhaustionReturnsLastAPIError(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	_, err := newClient(srv.URL, 2).Chat(t.Context(), llm.ChatRequest{Model: "m"})
+	var apiErr *llm.APIError
+	require.True(t, errors.As(err, &apiErr))
+	assert.Equal(t, http.StatusServiceUnavailable, apiErr.Status)
+	assert.Equal(t, int32(3), calls.Load())
+}
+
+func TestChatDoesNotRetryAttemptTimeout(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		select {
+		case <-r.Context().Done():
+		case <-time.After(2 * time.Second):
+		}
+	}))
+	defer srv.Close()
+
+	c := llm.NewOpenAI(llm.OpenAIConfig{BaseURL: srv.URL, APIKey: "secret", Timeout: 50 * time.Millisecond, MaxRetries: 2, RetryBase: time.Millisecond})
+	_, err := c.Chat(t.Context(), llm.ChatRequest{Model: "m"})
+	require.Error(t, err)
+	assert.Equal(t, int32(1), calls.Load())
+}
+
+func TestChatErrorsDoNotLeakAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	url := srv.URL
+	_, errHTTP := newClient(url, 1).Chat(t.Context(), llm.ChatRequest{Model: "m"})
+	srv.Close()
+	_, errNet := newClient(url, 1).Chat(t.Context(), llm.ChatRequest{Model: "m"}) // connection refused
+
+	for _, err := range []error{errHTTP, errNet} {
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "secret")
+	}
+}

@@ -18,7 +18,7 @@ type OpenAIConfig struct {
 	BaseURL    string // e.g. https://openrouter.ai/api/v1
 	APIKey     string
 	Timeout    time.Duration // per attempt; default 30s
-	MaxRetries int           // extra attempts on 429/5xx/network errors
+	MaxRetries int           // extra attempts on 429, 5xx and transport errors (not on per-attempt timeouts)
 	RetryBase  time.Duration // first backoff delay, doubled each retry; default 500ms
 	HTTPClient *http.Client
 	Referer    string // optional OpenRouter attribution headers
@@ -150,7 +150,10 @@ func retryable(err error) bool {
 	if errors.As(err, &apiErr) {
 		return apiErr.Status == http.StatusTooManyRequests || apiErr.Status >= 500
 	}
-	return !errors.Is(err, context.Canceled) // network errors and per-attempt timeouts
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false // caller cancelled, or the attempt's own timeout expired
+	}
+	return true // transport/connection errors
 }
 
 func truncate(s string, n int) string {
