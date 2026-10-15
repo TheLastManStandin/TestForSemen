@@ -1,0 +1,9 @@
+package: gen
+output: internal/httpapi/gen/api.gen.go
+generate:
+  models: true
+  std-http-server: true
+  strict-server: true
+output-options:
+  # SSE is hand-written in sse.go; it stays in the spec for documentation and frontend types.
+  exclude-operation-ids: [streamEvents]
