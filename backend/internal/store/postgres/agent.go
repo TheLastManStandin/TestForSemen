@@ -62,7 +62,7 @@ func (s *Store) SaveTrace(ctx context.Context, t domain.Trace) error {
 
 // ListTraces returns traces newest first and the total count.
 func (s *Store) ListTraces(ctx context.Context, userID *int64, limit, offset int) ([]domain.Trace, int, error) {
-	rows, err := s.q.ListTraces(ctx, db.ListTracesParams{UserID: userID, Off: int32(offset), Lim: clampInt32(limit)})
+	rows, err := s.q.ListTraces(ctx, db.ListTracesParams{UserID: userID, Off: clampInt32(offset), Lim: clampInt32(limit)})
 	if err != nil {
 		return nil, 0, fmt.Errorf("list traces: %w", err)
 	}
