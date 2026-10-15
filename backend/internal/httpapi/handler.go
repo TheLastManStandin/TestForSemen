@@ -21,7 +21,7 @@ type Deps struct {
 	Heartbeat time.Duration // SSE keep-alive interval; default 25s
 }
 
-// NewHandler builds the full HTTP handler.
+// NewHandler builds the full HTTP handler: REST under /api, SSE at /api/events, /healthz.
 func NewHandler(d Deps) http.Handler {
 	if d.Heartbeat == 0 {
 		d.Heartbeat = 25 * time.Second
@@ -32,5 +32,7 @@ func NewHandler(d Deps) http.Handler {
 		ResponseErrorHandlerFunc: errorHandler(d.Log),
 	})
 	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{BaseURL: "/api", BaseRouter: mux, ErrorHandlerFunc: badRequest})
+	mux.Handle("GET /api/events", sseHandler(d.Bus, d.Heartbeat, d.Log))
+	mux.Handle("GET /healthz", healthHandler(d.Health))
 	return recoverer(d.Log, logRequests(d.Log, mux))
 }
