@@ -127,8 +127,12 @@ func parseSummaryRow(line string) (summaryRow, bool) {
 	if _, err := fmt.Sscanf(cells[2][strings.LastIndex(cells[2], "(")+1:], "%d/%d", &passed, &total); err == nil && total > 0 {
 		row.rate = float64(passed) / float64(total)
 	}
-	fmt.Sscanf(strings.TrimSpace(cells[3]), "%f", &row.latency)
-	fmt.Sscanf(strings.TrimPrefix(strings.TrimSpace(cells[4]), "$"), "%f", &row.cost)
+	if _, err := fmt.Sscanf(strings.TrimSpace(cells[3]), "%f", &row.latency); err != nil {
+		row.latency = 0
+	}
+	if _, err := fmt.Sscanf(strings.TrimPrefix(strings.TrimSpace(cells[4]), "$"), "%f", &row.cost); err != nil {
+		row.cost = 0
+	}
 	return row, row.model != ""
 }
 
