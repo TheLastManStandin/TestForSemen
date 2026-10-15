@@ -90,7 +90,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	tg.SetHandler(bot.NewHandler(tg, ag, svc, transcriber, bot.Config{
+	tg.SetHandler(bot.NewHandler(tg, ag, bot.NewMemberSet(cfg.Members), transcriber, bot.Config{
 		MaxVoiceSeconds: cfg.STTMaxSeconds, Traces: store, STTModel: cfg.STTModel,
 	}, log))
 
