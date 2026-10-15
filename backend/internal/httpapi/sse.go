@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,8 +18,8 @@ type sseEvent struct {
 	Expense gen.Expense `json:"expense"`
 }
 
-// sseHandler streams expense changes. The http.Server must not set WriteTimeout.
-func sseHandler(bus *events.Bus, heartbeat time.Duration, log *slog.Logger) http.HandlerFunc {
+// sseHandler streams expense changes until the client leaves or streams is cancelled. The http.Server must not set WriteTimeout.
+func sseHandler(streams context.Context, bus *events.Bus, heartbeat time.Duration, log *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		rc := http.NewResponseController(w)
 		h := w.Header()
@@ -43,6 +44,8 @@ func sseHandler(bus *events.Bus, heartbeat time.Duration, log *slog.Logger) http
 		for {
 			select {
 			case <-r.Context().Done():
+				return
+			case <-streams.Done():
 				return
 			case <-ticker.C:
 				if _, err := io.WriteString(w, ": ping\n\n"); err != nil {

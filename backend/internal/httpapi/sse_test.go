@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -53,6 +54,27 @@ func TestEventsStream(t *testing.T) {
 	assert.Contains(t, data, `"amount":"350.00"`)
 
 	readUntil(t, r, ": ping")
+}
+
+func TestEventsStreamEndsOnShutdownContext(t *testing.T) {
+	streams, endStreams := context.WithCancel(context.Background())
+	defer endStreams()
+	e := newEnv(t, func(d *httpapi.Deps) { d.StreamsCtx = streams })
+	reqCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, e.srv.URL+"/api/events", nil)
+	require.NoError(t, err)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	r := bufio.NewReader(resp.Body)
+	readUntil(t, r, ": connected")
+
+	endStreams()
+	_, err = io.ReadAll(r) // returns once the server closes the stream
+	require.NoError(t, err)
+	require.NoError(t, reqCtx.Err(), "stream must end before the client gives up")
 }
 
 func TestHealthz(t *testing.T) {
