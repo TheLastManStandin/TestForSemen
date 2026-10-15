@@ -44,7 +44,7 @@ func (s *Store) List(ctx context.Context, q expense.ListQuery) ([]domain.Expense
 	}
 	rows, err := s.q.ListExpenses(ctx, db.ListExpensesParams{
 		UserID: q.UserID, DateFrom: q.From, DateTo: q.To, Category: categoryPtr(q.Category), Text: likePattern(q.Text),
-		SortRecent: q.SortRecent, Off: int32(q.Offset), Lim: int32(limit),
+		SortRecent: q.SortRecent, Off: clampInt32(q.Offset), Lim: clampInt32(limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list expenses: %w", err)
@@ -132,4 +132,15 @@ func likePattern(text string) *string {
 	}
 	s := likeEscaper.Replace(text)
 	return &s
+}
+
+// clampInt32 maps n into [0, MaxInt32] so the conversion cannot overflow.
+func clampInt32(n int) int32 {
+	if n < 0 {
+		return 0
+	}
+	if n > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(n)
 }

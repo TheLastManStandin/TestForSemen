@@ -27,7 +27,7 @@ func (s *Store) AppendChat(ctx context.Context, userID int64, msgs []json.RawMes
 
 // RecentChat returns up to limit latest messages newer than since, oldest first.
 func (s *Store) RecentChat(ctx context.Context, userID int64, since time.Time, limit int) ([]json.RawMessage, error) {
-	rows, err := s.q.RecentChatMessages(ctx, db.RecentChatMessagesParams{UserID: userID, Since: since, Lim: int32(limit)})
+	rows, err := s.q.RecentChatMessages(ctx, db.RecentChatMessagesParams{UserID: userID, Since: since, Lim: clampInt32(limit)})
 	if err != nil {
 		return nil, fmt.Errorf("recent chat: %w", err)
 	}
@@ -62,7 +62,7 @@ func (s *Store) SaveTrace(ctx context.Context, t domain.Trace) error {
 
 // ListTraces returns traces newest first and the total count.
 func (s *Store) ListTraces(ctx context.Context, userID *int64, limit, offset int) ([]domain.Trace, int, error) {
-	rows, err := s.q.ListTraces(ctx, db.ListTracesParams{UserID: userID, Off: int32(offset), Lim: int32(limit)})
+	rows, err := s.q.ListTraces(ctx, db.ListTracesParams{UserID: userID, Off: int32(offset), Lim: clampInt32(limit)})
 	if err != nil {
 		return nil, 0, fmt.Errorf("list traces: %w", err)
 	}
