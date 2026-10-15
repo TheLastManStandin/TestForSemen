@@ -1,0 +1,58 @@
+package config_test
+
+import (
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/config"
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
+)
+
+func baseEnv() map[string]string {
+	return map[string]string{
+		"TELEGRAM_TOKEN": "tg-token",
+		"FAMILY_MEMBERS": "111:Папа, 222:Мама",
+		"LLM_API_KEY":    "key",
+		"LLM_MODEL":      "anthropic/claude-haiku-5.5",
+		"DATABASE_URL":   "postgres://x",
+	}
+}
+
+func TestLoadDefaults(t *testing.T) {
+	cfg, err := config.LoadEnv(baseEnv())
+	require.NoError(t, err)
+	assert.Equal(t, "https://openrouter.ai/api/v1", cfg.LLMBaseURL)
+	assert.Equal(t, 30*time.Second, cfg.LLMTimeout)
+	assert.True(t, cfg.STTEnabled)
+	assert.Equal(t, "openai/whisper-large-v3", cfg.STTModel)
+	assert.Equal(t, 60, cfg.STTMaxSeconds)
+	assert.Equal(t, ":8080", cfg.HTTPAddr)
+	assert.Equal(t, "Europe/Moscow", cfg.Location.String())
+	assert.False(t, cfg.SeedDemo)
+	assert.Equal(t, []domain.Member{{TelegramID: 111, Name: "Папа"}, {TelegramID: 222, Name: "Мама"}}, cfg.Members)
+}
+
+func TestLoadMissingRequired(t *testing.T) {
+	env := baseEnv()
+	delete(env, "LLM_MODEL")
+	_, err := config.LoadEnv(env)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "LLM_MODEL")
+}
+
+func TestLoadBadTimezone(t *testing.T) {
+	env := baseEnv()
+	env["APP_TIMEZONE"] = "Mars/Olympus"
+	_, err := config.LoadEnv(env)
+	assert.ErrorContains(t, err, "APP_TIMEZONE")
+}
+
+func TestParseMembersErrors(t *testing.T) {
+	for _, in := range []string{"", "abc", "111", "111:", ":Папа", "0:Папа", "111:A,111:B"} {
+		_, err := config.ParseMembers(in)
+		assert.Error(t, err, "input %q", in)
+	}
+}
