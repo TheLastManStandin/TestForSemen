@@ -1,5 +1,5 @@
 import { Wallet } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ExpenseEvent } from "@/api/client";
 import { useMembers } from "@/api/hooks";
@@ -26,18 +26,30 @@ export default function App() {
   const members = useMembers().data ?? [];
   const [highlighted, setHighlighted] = useState<Set<number>>(() => new Set());
 
+  const timers = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => pending.forEach(clearTimeout);
+  }, []);
+
   const onEvent = useCallback((ev: ExpenseEvent) => {
     const e = ev.expense;
     toast(`${e.member_name}: ${e.comment ?? CATEGORY_LABELS[e.category]} — ${formatMoney(e.amount)}`, { description: EVENT_VERB[ev.type] });
     if (ev.type === "expense.deleted") return;
     setHighlighted((prev) => new Set(prev).add(e.id));
-    setTimeout(() => {
-      setHighlighted((prev) => {
-        const next = new Set(prev);
-        next.delete(e.id);
-        return next;
-      });
-    }, HIGHLIGHT_MS);
+    clearTimeout(timers.current.get(e.id));
+    timers.current.set(
+      e.id,
+      setTimeout(() => {
+        timers.current.delete(e.id);
+        setHighlighted((prev) => {
+          const next = new Set(prev);
+          next.delete(e.id);
+          return next;
+        });
+      }, HIGHLIGHT_MS),
+    );
   }, []);
   const connected = useLiveUpdates(onEvent);
 

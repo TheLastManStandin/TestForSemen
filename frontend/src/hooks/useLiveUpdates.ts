@@ -20,10 +20,16 @@ export function useLiveUpdates(onEvent: (e: ExpenseEvent) => void): boolean {
   useEffect(() => {
     const source = new EventSource("/api/events");
     const onMessage = (msg: MessageEvent<string>) => {
-      const event = JSON.parse(msg.data) as ExpenseEvent;
       void qc.invalidateQueries({ queryKey: ["expenses"] });
       void qc.invalidateQueries({ queryKey: ["stats"] });
       void qc.invalidateQueries({ queryKey: ["traces"] });
+      let event: ExpenseEvent;
+      try {
+        event = JSON.parse(msg.data) as ExpenseEvent;
+      } catch (err) {
+        console.warn("live updates: ignoring malformed event", err);
+        return;
+      }
       handler.current(event);
     };
     EVENT_TYPES.forEach((t) => source.addEventListener(t, onMessage));
