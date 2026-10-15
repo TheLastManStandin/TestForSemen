@@ -29,5 +29,13 @@ services:
       - "8080:8080"
     restart: unless-stopped
 
+  frontend:
+    build: ./frontend
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+    restart: unless-stopped
+
 volumes:
   pgdata:
