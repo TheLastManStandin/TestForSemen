@@ -123,13 +123,13 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="category">Категория</Label>
+            <Label htmlFor="expense-category">Категория</Label>
             <Controller
               control={form.control}
               name="category"
               render={({ field }) => (
                 <Select value={field.value} onValueChange={field.onChange}>
-                  <SelectTrigger id="category">
+                  <SelectTrigger id="expense-category">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -67,9 +67,9 @@ export function FiltersBar({ filters, members, onChange, onCreate }: Props) {
       </div>
 
       <div className="grid gap-1.5">
-        <Label htmlFor="category">Категория</Label>
+        <Label htmlFor="filter-category">Категория</Label>
         <Select value={filters.category ?? ALL} onValueChange={(v) => onChange({ category: isCategory(v) ? v : null })}>
-          <SelectTrigger id="category" className="w-40">
+          <SelectTrigger id="filter-category" className="w-40">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
