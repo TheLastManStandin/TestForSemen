@@ -179,6 +179,25 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		assert.Equal(t, domain.Money(0), sum)
 	})
 
+	t.Run("text search treats LIKE wildcards literally", func(t *testing.T) {
+		r := setup(t)
+		insert(t, r, Papa.TelegramID, 10000, domain.CategoryOther, "2026-10-10", "обычный")
+		pct := insert(t, r, Papa.TelegramID, 20000, domain.CategoryOther, "2026-10-10", "скидка 50%")
+		under := insert(t, r, Papa.TelegramID, 30000, domain.CategoryOther, "2026-10-10", "a_b")
+
+		for _, tc := range []struct {
+			text string
+			want int64
+			sum  domain.Money
+		}{{"%", pct.ID, 20000}, {"_", under.ID, 30000}} {
+			assert.Equal(t, []int64{tc.want}, list(t, r, expense.ListQuery{Text: tc.text}), tc.text)
+			n, sum, err := r.Count(ctx, expense.ListQuery{Text: tc.text})
+			require.NoError(t, err)
+			assert.Equal(t, 1, n, tc.text)
+			assert.Equal(t, tc.sum, sum, tc.text)
+		}
+	})
+
 	t.Run("update", func(t *testing.T) {
 		r := setup(t)
 		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
