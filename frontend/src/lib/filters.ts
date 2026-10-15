@@ -11,6 +11,9 @@ export interface Filters {
   category: CategoryCode | null;
   page: number;
   tab: Tab;
+  /** Agent journal state; kept in the URL so reload and back/forward restore it. */
+  traceMemberId: number | null;
+  tracePage: number;
 }
 
 const PRESET_VALUES: Preset[] = ["this_week", "this_month", "last_month", "last_30_days", "custom"];
@@ -18,7 +21,7 @@ const DEFAULT_PRESET = "this_month";
 const ISO_DATE = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 function defaults(todayIso: string): Filters {
-  return { preset: DEFAULT_PRESET, ...presetRange(DEFAULT_PRESET, todayIso), memberId: null, category: null, page: 1, tab: "expenses" };
+  return { preset: DEFAULT_PRESET, ...presetRange(DEFAULT_PRESET, todayIso), memberId: null, category: null, page: 1, tab: "expenses", traceMemberId: null, tracePage: 1 };
 }
 
 /** Parses the URL query; anything invalid falls back to its default. */
@@ -49,6 +52,12 @@ export function parseFilters(search: string, todayIso: string): Filters {
   if (Number.isInteger(page) && page > 1) f.page = page;
 
   if (p.get("tab") === "traces") f.tab = "traces";
+
+  const traceMember = Number(p.get("trace_member"));
+  if (Number.isSafeInteger(traceMember) && traceMember > 0) f.traceMemberId = traceMember;
+
+  const tracePage = Number(p.get("trace_page"));
+  if (Number.isInteger(tracePage) && tracePage > 1) f.tracePage = tracePage;
   return f;
 }
 
@@ -64,6 +73,8 @@ export function serializeFilters(f: Filters): string {
   if (f.category !== null) p.set("category", f.category);
   if (f.page > 1) p.set("page", String(f.page));
   if (f.tab !== "expenses") p.set("tab", f.tab);
+  if (f.traceMemberId !== null) p.set("trace_member", String(f.traceMemberId));
+  if (f.tracePage > 1) p.set("trace_page", String(f.tracePage));
   return p.toString();
 }
 
@@ -79,6 +90,9 @@ export function applyPatch(f: Filters, patch: Partial<Filters>, todayIso: string
   const filterKeys: (keyof Filters)[] = ["preset", "from", "to", "memberId", "category"];
   if (filterKeys.some((k) => k in patch) && !("page" in patch)) {
     next.page = 1;
+  }
+  if ("traceMemberId" in patch && !("tracePage" in patch)) {
+    next.tracePage = 1;
   }
   return next;
 }

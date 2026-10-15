@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Toaster } from "@/components/ui/sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpensesPage } from "@/features/expenses/ExpensesPage";
+import { TracesPage } from "@/features/traces/TracesPage";
 import { useFilters } from "@/hooks/useFilters";
 import { useLiveUpdates } from "@/hooks/useLiveUpdates";
 import type { Tab } from "@/lib/filters";
@@ -77,7 +78,7 @@ export default function App() {
             <ExpensesPage filters={filters} onChange={update} members={members} highlighted={highlighted} />
           </TabsContent>
           <TabsContent value="traces">
-            <p className="text-muted-foreground">Скоро здесь появится журнал агента.</p>
+            <TracesPage filters={filters} onChange={update} members={members} />
           </TabsContent>
         </Tabs>
       </main>

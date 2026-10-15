@@ -11,6 +11,8 @@ const defaults: Filters = {
   category: null,
   page: 1,
   tab: "expenses",
+  traceMemberId: null,
+  tracePage: 1,
 };
 
 describe("parseFilters", () => {
@@ -27,6 +29,8 @@ describe("parseFilters", () => {
       category: "food",
       page: 3,
       tab: "traces",
+      traceMemberId: null,
+      tracePage: 1,
     });
   });
 
@@ -48,8 +52,34 @@ describe("serializeFilters", () => {
   });
 
   it("round-trips", () => {
-    const f: Filters = { preset: "custom", from: "2026-08-01", to: "2026-08-31", memberId: 222, category: "health", page: 2, tab: "traces" };
+    const f: Filters = { preset: "custom", from: "2026-08-01", to: "2026-08-31", memberId: 222, category: "health", page: 2, tab: "traces", traceMemberId: 111, tracePage: 4 };
     expect(parseFilters("?" + serializeFilters(f), today)).toEqual(f);
+  });
+});
+
+describe("trace journal state", () => {
+  it("reads member and page", () => {
+    const f = parseFilters("?tab=traces&trace_member=111&trace_page=3", today);
+    expect(f.traceMemberId).toBe(111);
+    expect(f.tracePage).toBe(3);
+  });
+
+  it("falls back to defaults on garbage", () => {
+    const f = parseFilters("?trace_member=abc&trace_page=-3", today);
+    expect(f.traceMemberId).toBeNull();
+    expect(f.tracePage).toBe(1);
+  });
+
+  it("serializes only non-default values and survives expense filter changes", () => {
+    const f = applyPatch(defaults, { tab: "traces", traceMemberId: 111, tracePage: 2 }, today);
+    expect(serializeFilters(f)).toBe("tab=traces&trace_member=111&trace_page=2");
+    expect(applyPatch(f, { category: "food" }, today).tracePage).toBe(2);
+  });
+
+  it("resets the trace page when the member changes", () => {
+    const f = { ...defaults, tracePage: 3 };
+    expect(applyPatch(f, { traceMemberId: 222 }, today).tracePage).toBe(1);
+    expect(applyPatch(f, { tracePage: 4 }, today).tracePage).toBe(4);
   });
 });
 
