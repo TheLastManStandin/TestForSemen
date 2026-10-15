@@ -1,12 +1,16 @@
 SQLC_IMAGE := sqlc/sqlc:1.31.1
 
-.PHONY: up down logs test test-short lint gen gen-sql gen-api gen-web eval
+.PHONY: up down logs seed test test-short lint gen gen-sql gen-api gen-web eval
 
 up:
 	docker compose up --build -d
 
 down:
 	docker compose down
+
+# Seeding only happens when the expenses table is empty.
+seed:
+	SEED_DEMO=true docker compose up -d --build backend
 
 logs:
 	docker compose logs -f backend
