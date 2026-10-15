@@ -14,7 +14,7 @@ Family expenses service: Telegram bot with an AI agent + web panel for the head 
 - `make test` (all, needs Docker) / `make test-short` (unit only)
 - `make gen` — regenerate sqlc, oapi-codegen, frontend API types
 - `make up` / `make down` — docker compose
-- `make eval MODEL=<openrouter model id>` — agent evals
+- `make eval [MODEL=<openrouter model id>]` — agent evals (model defaults to `$LLM_MODEL`); `make eval-all` — compare all candidate models and refresh `backend/evals/results/README.md`
 
 ## Rules
 - Business logic lives only in `backend/internal/expense` (`Service`). HTTP and the agent are thin adapters.
