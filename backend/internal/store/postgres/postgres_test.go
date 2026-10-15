@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/agent"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/expense"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/expense/expensetest"
@@ -97,3 +98,9 @@ func TestTraces(t *testing.T) {
 	assert.JSONEq(t, `{"amount":"350"}`, string(tr.Steps[0].Args))
 	assert.False(t, tr.CreatedAt.IsZero())
 }
+
+// Compile-time checks: the Postgres store backs the agent's history and traces.
+var (
+	_ agent.History   = (*postgres.Store)(nil)
+	_ agent.TraceSink = (*postgres.Store)(nil)
+)
