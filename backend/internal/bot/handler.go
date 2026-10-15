@@ -14,7 +14,10 @@ import (
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/stt"
 )
 
-const maxMessageRunes = 4096
+const (
+	maxMessageRunes = 4096
+	replyTimeout    = 10 * time.Second
+)
 
 // Messenger is the part of Telegram the handler needs.
 type Messenger interface {
@@ -180,6 +183,9 @@ func (h *Handler) reply(ctx context.Context, chatID int64, text string) {
 	if utf8.RuneCountInString(text) > maxMessageRunes {
 		text = string([]rune(text)[:maxMessageRunes-1]) + "…"
 	}
+	// Detached: the message ctx may already be expired (e.g. an LLM outage), and the member must still get an answer.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), replyTimeout)
+	defer cancel()
 	if err := h.msg.SendText(ctx, chatID, text); err != nil {
 		h.log.ErrorContext(ctx, "send message failed", "chat_id", chatID, "err", err)
 	}

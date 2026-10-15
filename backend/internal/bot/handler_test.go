@@ -34,9 +34,12 @@ type fakeMessenger struct {
 	downloads int
 }
 
-func (f *fakeMessenger) SendText(_ context.Context, chatID int64, text string) error {
+func (f *fakeMessenger) SendText(ctx context.Context, chatID int64, text string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if chatID != chat {
 		return errors.New("wrong chat")
 	}
@@ -211,7 +214,8 @@ func TestVoiceTranscriptionFailure(t *testing.T) {
 			e := newEnv(t, true)
 			*e.stt = *s
 			e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
-			assert.Contains(t, e.msg.last(t), "Не разобрал голосовое")
+			assert.Equal(t, "Не разобрал голосовое 🙏 Попробуй ещё раз или напиши текстом", e.msg.last(t))
+			assert.NotContains(t, e.msg.last(t), "stt down")
 			assert.Empty(t, e.agent.inputs)
 		})
 	}
@@ -246,6 +250,14 @@ func TestVoiceFailuresAreTraced(t *testing.T) {
 		assert.Equal(t, "openai/whisper-large-v3", tr.Model)
 		assert.NotNil(t, tr.STTms)
 	})
+	t.Run("empty transcript", func(t *testing.T) {
+		e := newEnv(t, true)
+		*e.stt = fakeSTT{text: "  "}
+		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+		require.Len(t, e.traces.traces, 1)
+		assert.Equal(t, "empty transcript", e.traces.traces[0].Error)
+		assert.NotNil(t, e.traces.traces[0].STTms)
+	})
 	t.Run("download error", func(t *testing.T) {
 		e := newEnv(t, true)
 		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "missing", Duration: 3}})
@@ -262,4 +274,19 @@ func TestVoiceFailuresAreTraced(t *testing.T) {
 		h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 		assert.Contains(t, e.msg.last(t), "Не разобрал")
 	})
+}
+
+// blockingAgent waits for the message ctx to expire, like an LLM that never answers.
+type blockingAgent struct{}
+
+func (blockingAgent) Run(ctx context.Context, _ agent.Input) (agent.Result, error) {
+	<-ctx.Done()
+	return agent.Result{}, context.DeadlineExceeded
+}
+
+func TestInternalErrorIsSentAfterMessageTimeout(t *testing.T) {
+	e := newEnv(t, true)
+	h := bot.NewHandler(e.msg, blockingAgent{}, fakeMembers{member: true}, e.stt, bot.Config{MessageTimeout: 20 * time.Millisecond}, nil)
+	h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "кофе 200"})
+	assert.Equal(t, "Что-то пошло не так, попробуй ещё раз через минуту", e.msg.last(t))
 }
