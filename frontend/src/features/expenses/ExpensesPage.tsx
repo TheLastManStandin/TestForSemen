@@ -3,6 +3,8 @@ import { useExpenses } from "@/api/hooks";
 import type { Expense, Member } from "@/api/client";
 import type { Filters } from "@/lib/filters";
 import { todayISO } from "@/lib/period";
+import { DeleteExpenseDialog } from "./DeleteExpenseDialog";
+import { ExpenseDialog } from "./ExpenseDialog";
 import { ExpensesTable } from "./ExpensesTable";
 import { FiltersBar } from "./FiltersBar";
 
@@ -17,8 +19,8 @@ type Editing = { mode: "create" } | { mode: "edit"; expense: Expense } | null;
 
 export function ExpensesPage({ filters, onChange, members, highlighted }: Props) {
   const expenses = useExpenses(filters);
-  const [, setEditing] = useState<Editing>(null);
-  const [, setDeleting] = useState<Expense | null>(null);
+  const [editing, setEditing] = useState<Editing>(null);
+  const [deleting, setDeleting] = useState<Expense | null>(null);
 
   return (
     <div className="grid gap-6">
@@ -35,6 +37,14 @@ export function ExpensesPage({ filters, onChange, members, highlighted }: Props)
         highlighted={highlighted}
         todayIso={todayISO()}
       />
+      <ExpenseDialog
+        open={editing !== null}
+        onOpenChange={(open) => !open && setEditing(null)}
+        expense={editing?.mode === "edit" ? editing.expense : undefined}
+        members={members}
+        defaultMemberId={filters.memberId}
+      />
+      <DeleteExpenseDialog expense={deleting} onClose={() => setDeleting(null)} />
     </div>
   );
 }
