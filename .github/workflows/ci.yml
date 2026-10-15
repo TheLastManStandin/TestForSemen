@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Vet
+        run: go vet ./...
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.14.0
+          working-directory: backend
+      - name: Test (unit + Postgres via testcontainers)
+        run: go test -race -count=1 ./...
+      - name: Generated code is up to date
+        run: |
+          docker run --rm -u "$(id -u):$(id -g)" -v "$PWD":/src -w /src sqlc/sqlc:1.31.1 generate
+          go tool oapi-codegen -config oapi-codegen.yaml ../api/openapi.yaml
+          # porcelain also reports untracked generated files, which git diff would miss
+          changes="$(git status --porcelain -- internal/store/postgres/db internal/httpapi/gen)"
+          if [ -n "$changes" ]; then
+            echo "Generated code is out of date; run 'make gen' and commit:"
+            echo "$changes"
+            exit 1
+          fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: API types are up to date
+        run: |
+          npm run gen:api
+          changes="$(git status --porcelain -- src/api)"
+          if [ -n "$changes" ]; then
+            echo "API types are out of date; run 'make gen-web' and commit:"
+            echo "$changes"
+            exit 1
+          fi
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: cp .env.example .env
+      - run: docker compose build

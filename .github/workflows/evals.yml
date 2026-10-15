@@ -1,0 +1,32 @@
+name: Agent evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: OpenRouter model id
+        required: true
+        default: anthropic/claude-haiku-5.5
+
+jobs:
+  evals:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - name: Run evals
+        env:
+          LLM_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          EVAL_MODEL: ${{ inputs.model }}
+        run: go run ./cmd/eval -model "$EVAL_MODEL"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: backend/evals/results/
