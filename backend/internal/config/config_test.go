@@ -56,3 +56,13 @@ func TestParseMembersErrors(t *testing.T) {
 		assert.Error(t, err, "input %q", in)
 	}
 }
+
+func TestLoadEmptyRequired(t *testing.T) {
+	for _, key := range []string{"TELEGRAM_TOKEN", "FAMILY_MEMBERS", "LLM_API_KEY", "LLM_MODEL", "DATABASE_URL"} {
+		env := baseEnv()
+		env[key] = ""
+		_, err := config.LoadEnv(env)
+		require.Error(t, err, key)
+		assert.Contains(t, err.Error(), key)
+	}
+}
