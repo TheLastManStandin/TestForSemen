@@ -1,6 +1,6 @@
 SQLC_IMAGE := sqlc/sqlc:1.31.1
 
-.PHONY: up down logs seed test test-short lint gen gen-sql gen-api gen-web eval
+.PHONY: up down logs seed test test-short lint gen gen-sql gen-api gen-web eval eval-all
 
 up:
 	docker compose up --build -d
@@ -36,5 +36,10 @@ gen-api:
 gen-web:
 	npm --prefix frontend run gen:api
 
+EVAL_MODELS := anthropic/claude-haiku-5.5 openai/gpt-6-luna google/gemini-3.8-flash deepseek/deepseek-v4.1-flash qwen/qwen3.8-omni-flash
+
 eval:
-	cd backend && go run ./cmd/eval -model "$(MODEL)"
+	cd backend && { [ ! -f ../.env ] || { set -a; . ../.env; set +a; }; } && go run ./cmd/eval $(if $(MODEL),-model "$(MODEL)")
+
+eval-all:
+	for m in $(EVAL_MODELS); do $(MAKE) eval MODEL=$$m || exit 1; done
