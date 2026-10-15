@@ -10,7 +10,7 @@ import {
   toKopecks,
 } from "./format";
 
-const NB = " ";
+const NB = "\u00a0";
 
 describe("money", () => {
   it("converts API decimals to kopecks without floats", () => {

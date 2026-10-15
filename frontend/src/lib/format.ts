@@ -16,7 +16,7 @@ export function isCategory(v: unknown): v is CategoryCode {
   return typeof v === "string" && (CATEGORY_CODES as readonly string[]).includes(v);
 }
 
-const NBSP = " ";
+const NBSP = "\u00a0";
 
 /** "1200.50" -> 120050. API amounts are decimal strings; never parse them as floats. */
 export function toKopecks(amount: string): number {

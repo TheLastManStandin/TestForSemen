@@ -122,7 +122,7 @@ func TestCheckUpdatedRejectsSideEffects(t *testing.T) {
 func TestCheckNormalizesReply(t *testing.T) {
 	s := seeded(t)
 	exp := Expect{ReplyContains: []string{"4 400"}, ReplyNotContains: []string{"платье"}, Ask: false}
-	for _, reply := range []string{"Еда: 4 400 ₽", "Еда: 4 400 ₽", "ЕДА: 4 400 ₽"} {
+	for _, reply := range []string{"Еда: 4 400 ₽", "Еда: 4\u00a0400\u00a0₽", "ЕДА: 4\u202f400 ₽"} {
 		assert.Empty(t, Check(exp, s, Outcome{Reply: reply}, today), reply)
 	}
 	assert.NotEmpty(t, Check(exp, s, Outcome{Reply: "4 400 ₽, а мама купила Платье"}, today))

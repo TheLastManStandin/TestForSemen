@@ -12,7 +12,7 @@ type Money int64
 
 var errBadAmount = errors.New("некорректная сумма")
 
-var separatorStripper = strings.NewReplacer(" ", "", " ", "", " ", "", "_", "")
+var separatorStripper = strings.NewReplacer(" ", "", "\u00a0", "", "\u202f", "", "_", "")
 
 // ParseMoney parses amounts like "350", "350.5", "350,50", "1 200", "1 200,50 ₽".
 func ParseMoney(s string) (Money, error) {
