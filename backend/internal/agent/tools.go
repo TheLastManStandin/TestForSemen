@@ -320,7 +320,10 @@ func (a *Agent) updateExpense(ctx context.Context, userID int64, raw []byte) (an
 	if err != nil {
 		return nil, err
 	}
-	return changeResult{payload: map[string]any{"updated": view(e)}, change: Change{Kind: ChangeUpdate, Expense: e, Before: &before}}, nil
+	return changeResult{payload: map[string]any{"updated": view(e)}, change: Change{
+		Kind: ChangeUpdate, Expense: e, Before: &before,
+		Patched: PatchedFields{Comment: patch.Comment != nil, Amount: patch.Amount != nil, Category: patch.Category != nil, Date: patch.SpentAt != nil},
+	}}, nil
 }
 
 func (a *Agent) deleteExpense(ctx context.Context, userID int64, raw []byte) (any, error) {

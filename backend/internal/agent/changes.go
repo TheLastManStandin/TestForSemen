@@ -28,6 +28,13 @@ type Change struct {
 	Kind    ChangeKind
 	Expense domain.Expense  // the expense after the change (as deleted, for ChangeDelete)
 	Before  *domain.Expense // the expense before an update; nil otherwise
+	Patched PatchedFields   // fields the update set itself; zero otherwise
+}
+
+// PatchedFields marks which fields an update_expense call set, so changes made
+// concurrently by someone else (e.g. the panel) are not attributed to the bot.
+type PatchedFields struct {
+	Comment, Amount, Category, Date bool
 }
 
 // replyPartialHeader opens the summary sent when a turn fails after changing data.
@@ -55,7 +62,7 @@ func summarizeChanges(changes []Change, today time.Time) string {
 		case ChangeUpdate:
 			b.WriteString("изменил: " + describeExpense(c.Expense, today))
 			if c.Before != nil {
-				if was := changedFrom(*c.Before, c.Expense, today); was != "" {
+				if was := changedFrom(*c.Before, c.Expense, c.Patched, today); was != "" {
 					b.WriteString(" (было " + was + ")")
 				}
 			}
@@ -75,23 +82,23 @@ func describeExpense(e domain.Expense, today time.Time) string {
 	return s
 }
 
-// changedFrom lists the previous values of the fields an update changed.
-func changedFrom(before, after domain.Expense, today time.Time) string {
+// changedFrom lists the previous values of the fields the update itself patched and changed.
+func changedFrom(before, after domain.Expense, patched PatchedFields, today time.Time) string {
 	var was []string
-	if before.Comment != after.Comment {
+	if patched.Comment && before.Comment != after.Comment {
 		if before.Comment == "" {
 			was = append(was, "без комментария")
 		} else {
 			was = append(was, before.Comment)
 		}
 	}
-	if before.Amount != after.Amount {
+	if patched.Amount && before.Amount != after.Amount {
 		was = append(was, before.Amount.Human())
 	}
-	if before.Category != after.Category {
+	if patched.Category && before.Category != after.Category {
 		was = append(was, before.Category.RU())
 	}
-	if !before.SpentAt.Equal(after.SpentAt) {
+	if patched.Date && !before.SpentAt.Equal(after.SpentAt) {
 		was = append(was, domain.HumanDate(before.SpentAt, today))
 	}
 	return strings.Join(was, ", ")
