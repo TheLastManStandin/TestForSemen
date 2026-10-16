@@ -202,3 +202,46 @@ func TestToolErrorsForBadCalls(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// propertyOrder returns the keys of the schema's top-level "properties" in wire order.
+func propertyOrder(t *testing.T, raw json.RawMessage) []string {
+	t.Helper()
+	var schema struct {
+		Properties json.RawMessage `json:"properties"`
+	}
+	require.NoError(t, json.Unmarshal(raw, &schema))
+	dec := json.NewDecoder(strings.NewReader(string(schema.Properties)))
+	_, err := dec.Token() // {
+	require.NoError(t, err)
+	var keys []string
+	for dec.More() {
+		tok, err := dec.Token()
+		require.NoError(t, err)
+		keys = append(keys, tok.(string))
+		var skip json.RawMessage
+		require.NoError(t, dec.Decode(&skip))
+	}
+	return keys
+}
+
+// Regression (update_yesterday_taxi on deepseek-v4.1-flash): with properties sorted
+// alphabetically "id" came last, so the model wrote {"id":10}, closed the object and
+// repeated that call until the loop gave up. Properties must reach the model in the
+// declared order: identifiers first, then the fields to set.
+func TestToolSchemasKeepDeclaredPropertyOrder(t *testing.T) {
+	want := map[string][]string{
+		"add_expense":    {"amount", "category", "date", "comment"},
+		"find_expenses":  {"period", "from", "to", "category", "text", "sort", "limit"},
+		"get_summary":    {"period", "from", "to", "category", "group_by"},
+		"update_expense": {"id", "amount", "category", "date", "comment"},
+		"delete_expense": {"id"},
+	}
+	data, err := json.Marshal(toolDefs) // exactly what goes on the wire
+	require.NoError(t, err)
+	var wire []llm.Tool
+	require.NoError(t, json.Unmarshal(data, &wire))
+	require.Len(t, wire, len(want))
+	for _, td := range wire {
+		assert.Equal(t, want[td.Function.Name], propertyOrder(t, td.Function.Parameters), td.Function.Name)
+	}
+}
