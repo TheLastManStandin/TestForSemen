@@ -41,12 +41,16 @@ func newToolAgent(t *testing.T) (*Agent, *expense.Service) {
 
 func call(t *testing.T, a *Agent, user int64, name, args string) map[string]any {
 	t.Helper()
-	out, step := a.execute(tctx, user, llm.ToolCall{ID: "c", Type: "function", Function: llm.FunctionCall{Name: name, Arguments: args}})
+	out, step, change := a.execute(tctx, user, llm.ToolCall{ID: "c", Type: "function", Function: llm.FunctionCall{Name: name, Arguments: args}})
 	assert.Equal(t, name, step.Tool)
 	assert.True(t, json.Valid(step.Args), "trace args must be valid JSON")
 	assert.JSONEq(t, out, string(step.Result))
 	var m map[string]any
 	require.NoError(t, json.Unmarshal([]byte(out), &m), out)
+	_, created := m["created"]
+	_, updated := m["updated"]
+	_, deleted := m["deleted"]
+	assert.Equal(t, created || updated || deleted, change != nil, "a change is reported exactly for successful mutations: %s", out)
 	return m
 }
 

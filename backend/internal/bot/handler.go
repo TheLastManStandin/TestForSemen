@@ -3,6 +3,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -173,8 +174,11 @@ func (h *Handler) runAgent(ctx context.Context, chatID int64, in agent.Input, pr
 	res, err := h.agent.Run(ctx, in)
 	if err != nil {
 		h.log.ErrorContext(ctx, "agent failed", "user_id", in.UserID, "err", err)
-		h.reply(ctx, chatID, prefix+textInternalError)
-		return
+		// After completed changes the agent provides a factual summary; never hide them behind a generic error.
+		if !errors.Is(err, agent.ErrPartial) || strings.TrimSpace(res.Reply) == "" {
+			h.reply(ctx, chatID, prefix+textInternalError)
+			return
+		}
 	}
 	h.reply(ctx, chatID, prefix+res.Reply)
 }
