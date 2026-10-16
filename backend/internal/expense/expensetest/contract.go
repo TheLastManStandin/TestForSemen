@@ -247,12 +247,6 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		assert.Empty(t, upd.Comment)
 		assert.Equal(t, domain.Money(50000), upd.Amount)
 		assert.Equal(t, int64(3), upd.Version)
-
-		// An empty patch still bumps the version (it is a write).
-		upd, err = r.Update(ctx, e.ID, expense.Patch{}, nil)
-		require.NoError(t, err)
-		assert.Equal(t, int64(4), upd.Version)
-		assert.Equal(t, domain.Money(50000), upd.Amount)
 	})
 
 	t.Run("update checks the expected version", func(t *testing.T) {

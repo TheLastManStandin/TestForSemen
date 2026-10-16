@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -60,6 +60,12 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
     if (open) form.reset(initialValues(expense, defaultMemberId));
   }, [open, expense, defaultMemberId, form]);
 
+  // Async handlers check this so a late response does not touch a dialog that is already closed.
+  const openRef = useRef(open);
+  useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
   const conflictToastId = (id: number) => `expense-conflict-${id}`;
 
   const setOpen = (next: boolean) => {
@@ -74,10 +80,12 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   const reloadAfterConflict = async (source: Expense) => {
     try {
       const fresh = await refreshExpense(source.id);
+      if (!openRef.current) return;
       setReloaded({ source, fresh });
       form.reset(initialValues(fresh, defaultMemberId), { keepDirtyValues: true });
       toast.info("Данные обновлены. Проверьте поля и сохраните ещё раз.");
     } catch (err) {
+      if (!openRef.current) return;
       if (err instanceof ApiError && err.status === 404) {
         toast.error("Трату уже удалили.");
         setOpen(false);
@@ -87,37 +95,39 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
     }
   };
 
-  const onSubmit = form.handleSubmit(async (v) => {
-    try {
-      if (base) {
-        const patch = buildExpensePatch(initialValues(base, defaultMemberId), v, base.version);
-        if (patch) await update.mutateAsync({ id: base.id, patch });
-      } else {
-        await create.mutateAsync({
-          user_id: Number(v.user_id),
-          amount: normalizeAmount(v.amount)!,
-          category: v.category,
-          spent_at: v.spent_at,
-          comment: v.comment.trim(),
-        });
+  // handleSubmit is invoked per event (not during render) because the handler reads openRef.
+  const onSubmit = (e: FormEvent<HTMLFormElement>) =>
+    form.handleSubmit(async (v) => {
+      try {
+        if (base) {
+          const patch = buildExpensePatch(initialValues(base, defaultMemberId), v, base.version);
+          if (patch) await update.mutateAsync({ id: base.id, patch });
+        } else {
+          await create.mutateAsync({
+            user_id: Number(v.user_id),
+            amount: normalizeAmount(v.amount)!,
+            category: v.category,
+            spent_at: v.spent_at,
+            comment: v.comment.trim(),
+          });
+        }
+        setOpen(false);
+      } catch (err) {
+        if (expense && isConflict(err)) {
+          const source = expense;
+          toast.error(err.message, {
+            id: conflictToastId(source.id),
+            duration: Infinity,
+            action: { label: "Обновить", onClick: () => void reloadAfterConflict(source) },
+          });
+          return;
+        }
+        const { placed, unplaced } = splitFieldErrors(fieldErrors(err), Object.keys(schema.shape));
+        for (const [field, message] of placed) form.setError(field as keyof FormValues, { message });
+        if (unplaced.length > 0) toast.error(unplaced.join("; "));
+        else if (placed.length === 0) toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
       }
-      setOpen(false);
-    } catch (err) {
-      if (expense && isConflict(err)) {
-        const source = expense;
-        toast.error(err.message, {
-          id: conflictToastId(source.id),
-          duration: Infinity,
-          action: { label: "Обновить", onClick: () => void reloadAfterConflict(source) },
-        });
-        return;
-      }
-      const { placed, unplaced } = splitFieldErrors(fieldErrors(err), Object.keys(schema.shape));
-      for (const [field, message] of placed) form.setError(field as keyof FormValues, { message });
-      if (unplaced.length > 0) toast.error(unplaced.join("; "));
-      else if (placed.length === 0) toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
-    }
-  });
+    })(e);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

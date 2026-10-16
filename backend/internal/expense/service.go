@@ -161,6 +161,10 @@ type Patch struct {
 }
 
 func (s *Service) Update(ctx context.Context, scope Scope, id int64, p Patch) (domain.Expense, error) {
+	if p.UserID == nil && p.Amount == nil && p.Category == nil && p.SpentAt == nil && p.Comment == nil {
+		// Nothing to change: do not bump the version or publish an event.
+		return domain.Expense{}, domain.Invalid("fields", "не передано ни одного поля для изменения")
+	}
 	if p.SpentAt != nil {
 		p.SpentAt = new(domain.DateOf(*p.SpentAt))
 	}

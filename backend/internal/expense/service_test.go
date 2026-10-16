@@ -187,6 +187,21 @@ func TestUpdate(t *testing.T) {
 	assert.Equal(t, []events.Type{events.ExpenseCreated, events.ExpenseUpdated, events.ExpenseUpdated}, rec.types())
 }
 
+func TestUpdateRejectsEmptyPatch(t *testing.T) {
+	svc, rec := newService(t, fixedNow)
+	e := mustCreate(t, svc, papa, 35000, domain.CategoryFood, "2026-10-14", "кофе")
+
+	for _, p := range []expense.Patch{{}, {Version: ptr(e.Version)}} {
+		_, err := svc.Update(ctx, expense.All(), e.ID, p)
+		assert.Equal(t, "fields", fieldOf(t, err))
+	}
+	got, err := svc.Get(ctx, expense.All(), e.ID)
+	require.NoError(t, err)
+	assert.Equal(t, e.Version, got.Version, "nothing written")
+	assert.True(t, got.UpdatedAt.Equal(e.UpdatedAt))
+	assert.Equal(t, []events.Type{events.ExpenseCreated}, rec.types(), "nothing published")
+}
+
 func TestDelete(t *testing.T) {
 	svc, rec := newService(t, fixedNow)
 	e := mustCreate(t, svc, papa, 120000, domain.CategoryTransport, "2026-10-14", "такси")

@@ -234,6 +234,24 @@ func TestUpdateExpenseStaleVersionIsConflict(t *testing.T) {
 	assert.Equal(t, first.Version, got.Version)
 }
 
+func TestUpdateExpenseEmptyPatchIsValidationError(t *testing.T) {
+	e := newEnv(t)
+	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
+	path := fmt.Sprintf("/api/expenses/%d", created.Id)
+
+	for _, body := range []map[string]any{{}, {"version": created.Version}} {
+		resp, data := e.do(t, http.MethodPatch, path, body)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode, string(data))
+		p := decode[gen.Problem](t, data)
+		require.NotNil(t, p.Errors)
+		assert.Equal(t, "fields", (*p.Errors)[0].Field)
+		assert.Contains(t, (*p.Errors)[0].Message, "не передано ни одного поля")
+	}
+	resp, data := e.do(t, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, created.Version, decode[gen.Expense](t, data).Version, "nothing written")
+}
+
 func TestDeleteExpense(t *testing.T) {
 	e := newEnv(t)
 	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
