@@ -59,6 +59,7 @@ flowchart LR
 - **Агент** (`backend/internal/agent`): собственный цикл tool calling (до 6 шагов), инструменты `add_expense`, `find_expenses`, `get_summary`, `update_expense`, `delete_expense`. Периоды («на этой неделе») вычисляет код, история диалога — последние 20 сообщений за 6 часов.
 - **Фронтенд** (`frontend/`): React 19 + Vite + TypeScript, shadcn/ui, TanStack Query, Recharts; типы API генерируются из той же спецификации; раздаётся через nginx, который проксирует `/api`.
 - **LLM настраивается через конфиг**: любой OpenAI-совместимый API (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`) — OpenRouter, OpenAI, Ollama, vLLM. Исключение — голос: транскрибация использует формат OpenRouter `/audio/transcriptions`, поэтому с другим `LLM_BASE_URL` голосовые сообщения работать не будут.
+- **Адрес Telegram Bot API** задаётся необязательной переменной `TELEGRAM_API_URL` (по умолчанию `https://api.telegram.org`) — для локального Bot API сервера или прокси.
 
 Ключевые решения: [`docs/adr/`](docs/adr). Полная спецификация: [`docs/superpowers/specs/`](docs/superpowers/specs).
 

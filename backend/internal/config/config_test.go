@@ -32,6 +32,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, ":8080", cfg.HTTPAddr)
 	assert.Equal(t, "Europe/Moscow", cfg.Location.String())
 	assert.False(t, cfg.SeedDemo)
+	assert.Equal(t, "https://api.telegram.org", cfg.TelegramAPIURL)
 	assert.Equal(t, []domain.Member{{TelegramID: 111, Name: "Папа"}, {TelegramID: 222, Name: "Мама"}}, cfg.Members)
 }
 
@@ -64,5 +65,19 @@ func TestLoadEmptyRequired(t *testing.T) {
 		_, err := config.LoadEnv(env)
 		require.Error(t, err, key)
 		assert.Contains(t, err.Error(), key)
+	}
+}
+
+func TestLoadTelegramAPIURL(t *testing.T) {
+	env := baseEnv()
+	env["TELEGRAM_API_URL"] = "http://localhost:8081"
+	cfg, err := config.LoadEnv(env)
+	require.NoError(t, err)
+	assert.Equal(t, "http://localhost:8081", cfg.TelegramAPIURL)
+
+	for _, bad := range []string{"api.telegram.org", "ftp://x", "/relative", "http://", "://"} {
+		env["TELEGRAM_API_URL"] = bad
+		_, err := config.LoadEnv(env)
+		assert.ErrorContains(t, err, "TELEGRAM_API_URL", "input %q", bad)
 	}
 }

@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -16,20 +17,22 @@ import (
 
 // Config is the full service configuration.
 type Config struct {
-	TelegramToken string        `env:"TELEGRAM_TOKEN,required,notEmpty"`
-	FamilyMembers string        `env:"FAMILY_MEMBERS,required,notEmpty"`
-	LLMAPIKey     string        `env:"LLM_API_KEY,required,notEmpty"`
-	LLMBaseURL    string        `env:"LLM_BASE_URL" envDefault:"https://openrouter.ai/api/v1"`
-	LLMModel      string        `env:"LLM_MODEL,required,notEmpty"`
-	LLMTimeout    time.Duration `env:"LLM_TIMEOUT" envDefault:"30s"`
-	STTEnabled    bool          `env:"STT_ENABLED" envDefault:"true"`
-	STTModel      string        `env:"STT_MODEL" envDefault:"openai/whisper-large-v3"`
-	STTMaxSeconds int           `env:"STT_MAX_SECONDS" envDefault:"60"`
-	Timezone      string        `env:"APP_TIMEZONE" envDefault:"Europe/Moscow"`
-	DatabaseURL   string        `env:"DATABASE_URL,required,notEmpty"`
-	HTTPAddr      string        `env:"HTTP_ADDR" envDefault:":8080"`
-	LogLevel      string        `env:"LOG_LEVEL" envDefault:"info"`
-	SeedDemo      bool          `env:"SEED_DEMO" envDefault:"false"`
+	TelegramToken string `env:"TELEGRAM_TOKEN,required,notEmpty"`
+	// TelegramAPIURL is the Bot API base URL (local Bot API server, proxy or test fake).
+	TelegramAPIURL string        `env:"TELEGRAM_API_URL" envDefault:"https://api.telegram.org"`
+	FamilyMembers  string        `env:"FAMILY_MEMBERS,required,notEmpty"`
+	LLMAPIKey      string        `env:"LLM_API_KEY,required,notEmpty"`
+	LLMBaseURL     string        `env:"LLM_BASE_URL" envDefault:"https://openrouter.ai/api/v1"`
+	LLMModel       string        `env:"LLM_MODEL,required,notEmpty"`
+	LLMTimeout     time.Duration `env:"LLM_TIMEOUT" envDefault:"30s"`
+	STTEnabled     bool          `env:"STT_ENABLED" envDefault:"true"`
+	STTModel       string        `env:"STT_MODEL" envDefault:"openai/whisper-large-v3"`
+	STTMaxSeconds  int           `env:"STT_MAX_SECONDS" envDefault:"60"`
+	Timezone       string        `env:"APP_TIMEZONE" envDefault:"Europe/Moscow"`
+	DatabaseURL    string        `env:"DATABASE_URL,required,notEmpty"`
+	HTTPAddr       string        `env:"HTTP_ADDR" envDefault:":8080"`
+	LogLevel       string        `env:"LOG_LEVEL" envDefault:"info"`
+	SeedDemo       bool          `env:"SEED_DEMO" envDefault:"false"`
 
 	// Derived values, filled by Load.
 	Members  []domain.Member
@@ -66,6 +69,10 @@ func finalize(cfg Config) (Config, error) {
 		return Config{}, fmt.Errorf("APP_TIMEZONE: %w", err)
 	}
 	cfg.Location = loc
+
+	if u, err := url.Parse(cfg.TelegramAPIURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return Config{}, errors.New("TELEGRAM_API_URL must be an absolute http(s) URL")
+	}
 
 	if cfg.STTMaxSeconds <= 0 {
 		return Config{}, errors.New("STT_MAX_SECONDS must be positive")

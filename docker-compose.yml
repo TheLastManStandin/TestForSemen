@@ -22,6 +22,7 @@ services:
       HTTP_ADDR: ":8080"
       # Interpolated from the shell or the repo-root .env, so `make seed` can override it.
       SEED_DEMO: ${SEED_DEMO:-false}
+      TELEGRAM_API_URL: ${TELEGRAM_API_URL:-https://api.telegram.org}
     depends_on:
       postgres:
         condition: service_healthy

@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	tgbot "github.com/go-telegram/bot"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/agent"
@@ -86,7 +87,7 @@ func run() error {
 		})
 	}
 
-	tg, err := bot.NewTelegram(cfg.TelegramToken, log)
+	tg, err := bot.NewTelegram(cfg.TelegramToken, log, tgbot.WithServerURL(cfg.TelegramAPIURL))
 	if err != nil {
 		return err
 	}

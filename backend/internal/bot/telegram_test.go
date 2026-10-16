@@ -56,6 +56,33 @@ func TestDownloadFileRedactsToken(t *testing.T) {
 	assert.Contains(t, err.Error(), "***")
 }
 
+func TestDownloadFileUsesServerURL(t *testing.T) {
+	var hits []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits = append(hits, r.URL.Path)
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/getMe"):
+			_, _ = io.WriteString(w, `{"ok":true,"result":{"id":1,"is_bot":true,"first_name":"b"}}`)
+		case strings.HasSuffix(r.URL.Path, "/getFile"):
+			_, _ = io.WriteString(w, `{"ok":true,"result":{"file_id":"f","file_path":"voice/a.oga"}}`)
+		case strings.HasSuffix(r.URL.Path, "/voice/a.oga"):
+			_, _ = io.WriteString(w, "audio")
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+
+	tg, err := NewTelegram(testToken, slog.New(slog.NewTextHandler(io.Discard, nil)), tgbot.WithServerURL(srv.URL))
+	require.NoError(t, err)
+	assert.Contains(t, hits[0], "/getMe")
+
+	data, err := tg.DownloadFile(context.Background(), "f")
+	require.NoError(t, err)
+	assert.Equal(t, "audio", string(data))
+	assert.Equal(t, "/file/bot"+testToken+"/voice/a.oga", hits[len(hits)-1])
+}
+
 func TestOnUpdateLogsIDs(t *testing.T) {
 	var buf bytes.Buffer
 	tg := &Telegram{log: slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}
