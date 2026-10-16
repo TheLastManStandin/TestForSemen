@@ -116,7 +116,8 @@ CREATE TABLE expenses (
   spent_at    DATE   NOT NULL,
   comment     TEXT   NOT NULL DEFAULT '',            -- пустая строка = нет комментария
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  version     BIGINT NOT NULL DEFAULT 1                -- +1 при каждом изменении (миграция 00002)
 );
 CREATE INDEX expenses_user_spent_idx ON expenses (user_id, spent_at DESC);
 CREATE INDEX expenses_spent_idx      ON expenses (spent_at DESC);
@@ -153,6 +154,7 @@ CREATE INDEX agent_traces_created_idx ON agent_traces (created_at DESC);
 - **`spent_at`** — `DATE`. «Сегодня/вчера» вычисляются в таймзоне `APP_TIMEZONE` (по умолчанию `Europe/Moscow`).
 - **Категории** — английские коды в БД и API; русские названия — в UI и в промпте агента. Маппинг: food=еда, transport=транспорт, housing=жильё, entertainment=развлечения, health=здоровье, shopping=покупки, other=другое.
 - **`updated_at`** обновляется сервисом при каждом изменении.
+- **Обновление — частичное и атомарное.** Один `UPDATE` меняет только переданные поля (`COALESCE(arg, col)`), в том же `WHERE` проверяет владельца и (если передана) ожидаемую `version`, увеличивает `version` и `updated_at`. Сервис читает строку только для валидации итогового состояния. Поэтому одновременные правки разных полей (бот меняет сумму, панель — комментарий) обе сохраняются, а устаревшая версия даёт `ErrConflict` без записи.
 - **Удаление** — жёсткое.
 - **История диалога** — в контекст агента попадают последние 20 сообщений пользователя не старше 6 часов. Старые записи не удаляются (YAGNI на очистку).
 
@@ -260,14 +262,16 @@ Delete(ctx, scope Scope, id int64) (Expense, error)  // возвращает у�
 | GET | `/api/expenses` | `member_id`, `from`, `to`, `category`, `limit` (≤ 200, по умолчанию 50), `offset` → `{items, total, sum}` |
 | POST | `/api/expenses` | `{user_id, amount, category, spent_at, comment?}` |
 | GET | `/api/expenses/{id}` | одна трата |
-| PATCH | `/api/expenses/{id}` | частичное обновление (включая смену `user_id`) |
+| PATCH | `/api/expenses/{id}` | частичное обновление (включая смену `user_id`): меняются только переданные поля; необязательный `version` — ожидаемая версия, при несовпадении 409 без записи |
 | DELETE | `/api/expenses/{id}` | 204 |
 | GET | `/api/stats` | `from`, `to`, `member_id` → `{total, count, by_category[], by_member[], by_day[]}` и `prev_total` за предыдущий период той же длины |
 | GET | `/api/events` | SSE: `expense.created`, `expense.updated`, `expense.deleted` (payload — трата), heartbeat каждые 25 с |
 | GET | `/api/traces` | `member_id`, `limit` (≤ 100), `offset` |
 | GET | `/healthz` | проверка БД |
 
-Объект траты: `{id, user_id, member_name, amount, category, spent_at, comment, created_at, updated_at}`.
+Объект траты: `{id, user_id, member_name, amount, category, spent_at, comment, created_at, updated_at, version}`.
+
+Панель отправляет в PATCH только изменённые поля и `version` открытой траты; на 409 показывает уведомление с кнопкой «Обновить», которая подгружает свежую трату и сохраняет введённые пользователем правки для повторной отправки. Бот (агент) `version` не передаёт.
 
 ## 9. Веб-панель
 
@@ -315,7 +319,7 @@ SEED_DEMO=false
 
 ## 11. Обработка ошибок и наблюдаемость
 
-- Доменные ошибки: `ErrNotFound`, `ErrValidation{Field, Msg}`. Маппинг: HTTP 404/422 + problem+json; для агента — `{"error": "..."}` в результате инструмента.
+- Доменные ошибки: `ErrNotFound`, `ErrValidation{Field, Msg}`, `ErrConflict` (устаревшая `version`). Маппинг: HTTP 404/422/409 + problem+json; для агента — `{"error": "..."}` в результате инструмента.
 - Логи: `log/slog` JSON, поля `update_id` / `request_id`, `user_id`, длительности.
 - Graceful shutdown: SIGTERM → остановка polling, дренаж HTTP (10 с), закрытие пула БД.
 - Миграции применяются при старте; при ошибке — выход с ненулевым кодом.
@@ -368,3 +372,9 @@ GitHub Actions на push/PR:
 - `expenses.comment` — `NOT NULL DEFAULT ''` вместо NULL; `chat_messages` хранит роль внутри JSON.
 - Evals проверяют результат (дифф состояния и ответ), а не точные аргументы инструментов; 45 кейсов; находятся в `backend/evals`.
 - Фронтенд покрыт юнит-тестами Vitest для чистой логики.
+
+## Изменения после ревью: одновременные правки
+
+- Потерянные обновления: раньше `Service.Update` читал строку и перезаписывал все поля, так что одновременные правки бота и панели молча затирали друг друга. Теперь `Repository.Update(id, Patch, owner)` пишет только переданные поля одним атомарным `UPDATE` с проверкой владельца.
+- Оптимистическая блокировка для панели: колонка `expenses.version` (миграция 00002), поле `version` в объекте траты и необязательный `version` в PATCH; несовпадение — `ErrConflict` → 409 «Трата была изменена другим пользователем. Обновите данные и повторите.»
+- Поведение закреплено общим контрактом `expensetest` (Postgres через testcontainers и memrepo).

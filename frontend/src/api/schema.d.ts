@@ -56,7 +56,10 @@ export interface paths {
         delete: operations["deleteExpense"];
         options?: never;
         head?: never;
-        /** Частично обновить трату */
+        /**
+         * Частично обновить трату
+         * @description Меняются только переданные поля, остальные остаются как в базе (одновременные правки разных полей не теряются). Если передан version и он не совпадает с текущим, ничего не записывается и возвращается 409.
+         */
         patch: operations["updateExpense"];
         trace?: never;
     };
@@ -141,6 +144,11 @@ export interface components {
             created_at: string;
             /** Format: date-time */
             updated_at: string;
+            /**
+             * Format: int64
+             * @description Растёт на 1 при каждом изменении
+             */
+            version: number;
         };
         ExpenseCreate: {
             /** Format: int64 */
@@ -161,6 +169,11 @@ export interface components {
             spent_at?: string;
             /** @description Пустая строка очищает комментарий */
             comment?: string;
+            /**
+             * Format: int64
+             * @description Ожидаемая версия траты (из Expense.version); при несовпадении — 409
+             */
+            version?: number;
         };
         ExpenseList: {
             items: components["schemas"]["Expense"][];
@@ -405,6 +418,7 @@ export interface operations {
                 };
             };
             404: components["responses"]["Problem"];
+            409: components["responses"]["Problem"];
             422: components["responses"]["Problem"];
         };
     };

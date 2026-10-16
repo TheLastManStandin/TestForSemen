@@ -100,6 +100,9 @@ type Expense struct {
 	SpentAt    openapi_types.Date `json:"spent_at"`
 	UpdatedAt  time.Time          `json:"updated_at"`
 	UserId     int64              `json:"user_id"`
+
+	// Version Растёт на 1 при каждом изменении
+	Version int64 `json:"version"`
 }
 
 // ExpenseCreate defines model for ExpenseCreate.
@@ -132,6 +135,9 @@ type ExpensePatch struct {
 	Comment *string             `json:"comment,omitempty"`
 	SpentAt *openapi_types.Date `json:"spent_at,omitempty"`
 	UserId  *int64              `json:"user_id,omitempty"`
+
+	// Version Ожидаемая версия траты (из Expense.version); при несовпадении — 409
+	Version *int64 `json:"version,omitempty"`
 }
 
 // FieldError defines model for FieldError.
@@ -928,6 +934,20 @@ func (response UpdateExpense404ApplicationProblemPlusJSONResponse) VisitUpdateEx
 	}
 	w.Header().Set("Content-Type", "application/problem+json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateExpense409ApplicationProblemPlusJSONResponse Problem
+
+func (response UpdateExpense409ApplicationProblemPlusJSONResponse) VisitUpdateExpenseResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }

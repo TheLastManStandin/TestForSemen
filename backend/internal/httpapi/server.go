@@ -93,7 +93,7 @@ func (s *Server) UpdateExpense(ctx context.Context, req gen.UpdateExpenseRequest
 	if b == nil {
 		return nil, domain.Invalid("body", "пустое тело запроса")
 	}
-	patch := expense.Patch{UserID: b.UserId, Comment: b.Comment}
+	patch := expense.Patch{UserID: b.UserId, Comment: b.Comment, Version: b.Version}
 	if b.Amount != nil {
 		m, err := parseAmount(*b.Amount)
 		if err != nil {

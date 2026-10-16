@@ -66,12 +66,24 @@ func (s *Store) Count(ctx context.Context, q expense.ListQuery) (int, domain.Mon
 	return int(row.Cnt), domain.Money(row.Total), nil
 }
 
-func (s *Store) Update(ctx context.Context, e domain.Expense, owner *int64) (domain.Expense, error) {
+func (s *Store) Update(ctx context.Context, id int64, p expense.Patch, owner *int64) (domain.Expense, error) {
+	var amount *int64
+	if p.Amount != nil {
+		amount = new(int64(*p.Amount))
+	}
 	row, err := s.q.UpdateExpense(ctx, db.UpdateExpenseParams{
-		ID: e.ID, UserID: e.UserID, Amount: int64(e.Amount), Category: string(e.Category), SpentAt: e.SpentAt, Comment: e.Comment, OwnerID: owner,
+		ID: id, UserID: p.UserID, Amount: amount, Category: categoryPtr(p.Category), SpentAt: p.SpentAt,
+		Comment: p.Comment, OwnerID: owner, ExpectedVersion: p.Version,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
-		return domain.Expense{}, domain.ErrNotFound
+		if p.Version == nil {
+			return domain.Expense{}, domain.ErrNotFound
+		}
+		// Nothing was written; tell a stale version apart from a missing or foreign row.
+		if _, err := s.Get(ctx, id, owner); err != nil {
+			return domain.Expense{}, err
+		}
+		return domain.Expense{}, domain.ErrConflict
 	}
 	if err != nil {
 		return domain.Expense{}, fmt.Errorf("update expense: %w", err)
@@ -111,7 +123,7 @@ func fromRow(r db.GetExpenseRow) domain.Expense {
 	return domain.Expense{
 		ID: r.ID, UserID: r.UserID, MemberName: r.MemberName, Amount: domain.Money(r.Amount),
 		Category: domain.Category(r.Category), SpentAt: r.SpentAt, Comment: r.Comment,
-		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, Version: r.Version,
 	}
 }
 

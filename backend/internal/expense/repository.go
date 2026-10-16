@@ -45,7 +45,7 @@ type Repository interface {
 	ListMembers(ctx context.Context) ([]domain.Member, error)
 	MemberExists(ctx context.Context, telegramID int64) (bool, error)
 
-	// Insert stores e and fills ID, MemberName, CreatedAt and UpdatedAt.
+	// Insert stores e and fills ID, MemberName, CreatedAt, UpdatedAt and Version (1).
 	Insert(ctx context.Context, e domain.Expense) (domain.Expense, error)
 	// Get returns domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone else.
 	Get(ctx context.Context, id int64, owner *int64) (domain.Expense, error)
@@ -53,10 +53,13 @@ type Repository interface {
 	List(ctx context.Context, q ListQuery) ([]domain.Expense, error)
 	// Count returns the number and sum of expenses matching q, ignoring Limit and Offset.
 	Count(ctx context.Context, q ListQuery) (int, domain.Money, error)
-	// Update replaces all mutable fields of the expense with ID e.ID and refreshes UpdatedAt.
-	// Returns domain.ErrNotFound if the expense is missing or owner != nil and the stored row
-	// belongs to someone else (checked atomically against the current row).
-	Update(ctx context.Context, e domain.Expense, owner *int64) (domain.Expense, error)
+	// Update sets only the non-nil fields of p (already normalized by Service), increments
+	// Version and refreshes UpdatedAt in one atomic write, so concurrent changes to other
+	// fields survive. All checks run against the current row in the same write:
+	// domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone
+	// else; domain.ErrConflict if p.Version != nil and differs from the stored version.
+	// Nothing is written when an error is returned.
+	Update(ctx context.Context, id int64, p Patch, owner *int64) (domain.Expense, error)
 	// Delete returns domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone else.
 	Delete(ctx context.Context, id int64, owner *int64) error
 	// Aggregate groups by (date, user, category) and orders rows the same way.
