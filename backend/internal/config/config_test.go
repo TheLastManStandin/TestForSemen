@@ -75,9 +75,24 @@ func TestLoadTelegramAPIURL(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "http://localhost:8081", cfg.TelegramAPIURL)
 
-	for _, bad := range []string{"api.telegram.org", "ftp://x", "/relative", "http://", "://"} {
+	for _, bad := range []string{"api.telegram.org", "ftp://x", "/relative", "http://", "://", "http://x?a=1", "http://x#f", "http://x?"} {
 		env["TELEGRAM_API_URL"] = bad
 		_, err := config.LoadEnv(env)
 		assert.ErrorContains(t, err, "TELEGRAM_API_URL", "input %q", bad)
+	}
+}
+
+func TestLoadTelegramAPIURLNormalised(t *testing.T) {
+	for in, want := range map[string]string{
+		"http://localhost:8081/":  "http://localhost:8081",
+		"http://localhost:8081//": "http://localhost:8081",
+		"":                        "https://api.telegram.org",
+		"  ":                      "https://api.telegram.org",
+	} {
+		env := baseEnv()
+		env["TELEGRAM_API_URL"] = in
+		cfg, err := config.LoadEnv(env)
+		require.NoError(t, err, "input %q", in)
+		assert.Equal(t, want, cfg.TelegramAPIURL, "input %q", in)
 	}
 }

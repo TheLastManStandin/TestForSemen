@@ -15,6 +15,8 @@ import (
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 )
 
+const defaultTelegramAPIURL = "https://api.telegram.org"
+
 // Config is the full service configuration.
 type Config struct {
 	TelegramToken string `env:"TELEGRAM_TOKEN,required,notEmpty"`
@@ -70,9 +72,14 @@ func finalize(cfg Config) (Config, error) {
 	}
 	cfg.Location = loc
 
-	if u, err := url.Parse(cfg.TelegramAPIURL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return Config{}, errors.New("TELEGRAM_API_URL must be an absolute http(s) URL")
+	if strings.TrimSpace(cfg.TelegramAPIURL) == "" {
+		cfg.TelegramAPIURL = defaultTelegramAPIURL
 	}
+	u, err := url.Parse(cfg.TelegramAPIURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.ForceQuery || u.Fragment != "" {
+		return Config{}, errors.New("TELEGRAM_API_URL must be an absolute http(s) URL without query or fragment")
+	}
+	cfg.TelegramAPIURL = strings.TrimRight(cfg.TelegramAPIURL, "/")
 
 	if cfg.STTMaxSeconds <= 0 {
 		return Config{}, errors.New("STT_MAX_SECONDS must be positive")
