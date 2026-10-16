@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/evals"
 )
@@ -18,6 +21,47 @@ func TestReportFileName(t *testing.T) {
 		if got := reportFileName(c.model, c.filter); got != c.want {
 			t.Errorf("reportFileName(%q, %q) = %q, want %q", c.model, c.filter, got, c.want)
 		}
+	}
+}
+
+func TestRunFileName(t *testing.T) {
+	at := time.Date(2026, 10, 16, 14, 3, 5, 0, time.UTC)
+	cases := []struct {
+		model, filter, want string
+	}{
+		{"deepseek/deepseek-v4.1-flash", "", "2026-10-16_14-03-05_deepseek_deepseek-v4.1-flash.md"},
+		{"deepseek/deepseek-v4.1-flash", "update_yesterday_taxi", "2026-10-16_14-03-05_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md"},
+		{"x/y:free", "a b/c", "2026-10-16_14-03-05_x_y_free_a-b-c.md"},
+	}
+	for _, c := range cases {
+		if got := runFileName(c.model, c.filter, at); got != c.want {
+			t.Errorf("runFileName(%q, %q) = %q, want %q", c.model, c.filter, got, c.want)
+		}
+	}
+}
+
+func TestWriteRunRecordNeverOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	at := time.Date(2026, 10, 16, 14, 3, 5, 0, time.UTC)
+	first, err := writeRunRecord(dir, "m/x", "f", at, "one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := writeRunRecord(dir, "m/x", "f", at, "two")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatalf("same-second runs share %s", first)
+	}
+	for path, want := range map[string]string{first: "one", second: "two"} {
+		got, err := os.ReadFile(filepath.Join(dir, path))
+		if err != nil || string(got) != want {
+			t.Errorf("%s = %q, %v; want %q", path, got, err, want)
+		}
+	}
+	if filepath.Dir(first) != "runs" {
+		t.Errorf("run records live in runs/, got %s", first)
 	}
 }
 

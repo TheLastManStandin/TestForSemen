@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -312,4 +313,91 @@ func TestRunLLMErrorAfterToolStepClosesTurn(t *testing.T) {
 	assert.Equal(t, []llm.Role{llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleAssistant}, roles)
 	assert.Equal(t, "Не удалось закончить ответ, но действия выполнены:\n• записал: кофе — 350 ₽, еда, 15 октября", last.Content)
 	assert.Contains(t, f.mem.Traces()[0].Error, "boom")
+}
+
+// schemaOrderLLM mimics deepseek-v4.1-flash on «вчерашнее такси было 1300»: it finds the
+// expense, then writes update_expense arguments with "id" first and afterwards only the
+// properties the schema lists after "id"; on a tool error it repeats the same call.
+type schemaOrderLLM struct{ args string }
+
+func (m *schemaOrderLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+	last := req.Messages[len(req.Messages)-1]
+	if last.Role == llm.RoleUser {
+		return calls(tc("f", "find_expenses", `{"period":"yesterday","text":"такси"}`)), nil
+	}
+	var res struct {
+		Items []struct {
+			ID int64 `json:"id"`
+		} `json:"items"`
+		Error   string          `json:"error"`
+		Updated json.RawMessage `json:"updated"`
+	}
+	if err := json.Unmarshal([]byte(last.Content), &res); err != nil {
+		return llm.ChatResponse{}, err
+	}
+	switch {
+	case res.Updated != nil:
+		return text("Исправил: такси — 1 300 ₽"), nil
+	case res.Error != "":
+		return calls(tc("u", "update_expense", m.args)), nil
+	}
+	values := map[string]any{"amount": "1300"}
+	args := fmt.Sprintf(`{"id":%d`, res.Items[0].ID)
+	afterID := false
+	for _, name := range updateSchemaOrder(req.Tools) {
+		if name == "id" {
+			afterID = true
+			continue
+		}
+		if v, ok := values[name]; afterID && ok {
+			b, _ := json.Marshal(v)
+			args += fmt.Sprintf(`,%q:%s`, name, b)
+		}
+	}
+	m.args = args + "}"
+	return calls(tc("u", "update_expense", m.args)), nil
+}
+
+// updateSchemaOrder returns update_expense property names in the order sent on the wire.
+func updateSchemaOrder(tools []llm.Tool) []string {
+	data, _ := json.Marshal(tools)
+	var wire []llm.Tool
+	_ = json.Unmarshal(data, &wire)
+	for _, t := range wire {
+		if t.Function.Name != "update_expense" {
+			continue
+		}
+		var schema struct {
+			Properties json.RawMessage `json:"properties"`
+		}
+		_ = json.Unmarshal(t.Function.Parameters, &schema)
+		dec := json.NewDecoder(bytes.NewReader(schema.Properties))
+		_, _ = dec.Token()
+		var names []string
+		for dec.More() {
+			tok, _ := dec.Token()
+			names = append(names, tok.(string))
+			var skip json.RawMessage
+			_ = dec.Decode(&skip)
+		}
+		return names
+	}
+	return nil
+}
+
+func TestRunUpdatesAmountWhenModelFillsArgsInSchemaOrder(t *testing.T) {
+	m := &schemaOrderLLM{}
+	f := newFixture(t, m)
+	yesterday := domain.DateOf(fixedNow).AddDate(0, 0, -1)
+	taxi, err := f.svc.Create(ctx, expense.CreateInput{UserID: papa, Amount: 120_000, Category: domain.CategoryTransport, SpentAt: yesterday, Comment: "такси"})
+	require.NoError(t, err)
+
+	out, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "вчерашнее такси было 1300"})
+	require.NoError(t, err)
+
+	assert.Equal(t, fmt.Sprintf(`{"id":%d,"amount":"1300"}`, taxi.ID), m.args)
+	assert.Equal(t, "Исправил: такси — 1 300 ₽", out.Reply)
+	items := own(t, f.svc, papa)
+	require.Len(t, items, 1)
+	assert.Equal(t, domain.Money(130_000), items[0].Amount)
 }

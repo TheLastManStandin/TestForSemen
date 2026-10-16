@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -39,19 +40,15 @@ func buildToolDefs() []llm.Tool {
 	}
 	str := func(desc string) map[string]any { return map[string]any{"type": "string", "description": desc} }
 	category := map[string]any{"type": "string", "enum": categories, "description": "Код категории"}
-	rangeProps := func(extra map[string]any) map[string]any {
-		props := map[string]any{
-			"period": map[string]any{"type": "string", "enum": periods, "description": "Относительный период; предпочтительнее from/to"},
-			"from":   str("Начало периода YYYY-MM-DD, только если period не подходит"),
-			"to":     str("Конец периода YYYY-MM-DD, только если period не подходит"),
-		}
-		for k, v := range extra {
-			props[k] = v
-		}
-		return props
+	rangeProps := func(extra ...prop) props {
+		return append(props{
+			{"period", map[string]any{"type": "string", "enum": periods, "description": "Относительный период; предпочтительнее from/to"}},
+			{"from", str("Начало периода YYYY-MM-DD, только если period не подходит")},
+			{"to", str("Конец периода YYYY-MM-DD, только если period не подходит")},
+		}, extra...)
 	}
-	object := func(props map[string]any, required ...string) map[string]any {
-		o := map[string]any{"type": "object", "properties": props, "additionalProperties": false}
+	object := func(properties props, required ...string) map[string]any {
+		o := map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
 		if len(required) > 0 {
 			o["required"] = required
 		}
@@ -66,33 +63,67 @@ func buildToolDefs() []llm.Tool {
 	}
 
 	return []llm.Tool{
-		def("add_expense", "Записать новую трату пользователя.", object(map[string]any{
-			"amount":   str("Сумма в рублях цифрами, например \"350\" или \"1200.50\""),
-			"category": category,
-			"date":     str("Дата траты YYYY-MM-DD; если не указана — сегодня"),
-			"comment":  str("Что купили, 1–4 слова из сообщения: \"кофе\", \"такси до работы\""),
+		def("add_expense", "Записать новую трату пользователя.", object(props{
+			{"amount", str("Сумма в рублях цифрами, например \"350\" или \"1200.50\"")},
+			{"category", category},
+			{"date", str("Дата траты YYYY-MM-DD; если не указана — сегодня")},
+			{"comment", str("Что купили, 1–4 слова из сообщения: \"кофе\", \"такси до работы\"")},
 		}, "amount", "category", "comment")),
-		def("find_expenses", "Найти траты пользователя с их id: для показа списка и перед изменением или удалением.", object(rangeProps(map[string]any{
-			"category": category,
-			"text":     str("Подстрока комментария, например \"такси\""),
-			"sort":     map[string]any{"type": "string", "enum": []string{"date", "recent"}, "description": "date — по дате траты, recent — последние добавленные"},
-			"limit":    map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Сколько трат вернуть, по умолчанию 10"},
-		}))),
-		def("get_summary", "Посчитать сумму трат пользователя за период; без периода — текущий месяц.", object(rangeProps(map[string]any{
-			"category": category,
-			"group_by": map[string]any{"type": "string", "enum": []string{"none", "category", "day"}, "description": "Группировка итогов"},
-		}))),
-		def("update_expense", "Изменить трату пользователя по id. Передавай только изменяемые поля.", object(map[string]any{
-			"id":       map[string]any{"type": "integer", "description": "id траты из find_expenses"},
-			"amount":   str("Новая сумма в рублях"),
-			"category": category,
-			"date":     str("Новая дата YYYY-MM-DD"),
-			"comment":  str("Новый комментарий"),
+		def("find_expenses", "Найти траты пользователя с их id: для показа списка и перед изменением или удалением.", object(rangeProps(
+			prop{"category", category},
+			prop{"text", str("Подстрока комментария, например \"такси\"")},
+			prop{"sort", map[string]any{"type": "string", "enum": []string{"date", "recent"}, "description": "date — по дате траты, recent — последние добавленные"}},
+			prop{"limit", map[string]any{"type": "integer", "minimum": 1, "maximum": 50, "description": "Сколько трат вернуть, по умолчанию 10"}},
+		))),
+		def("get_summary", "Посчитать сумму трат пользователя за период; без периода — текущий месяц.", object(rangeProps(
+			prop{"category", category},
+			prop{"group_by", map[string]any{"type": "string", "enum": []string{"none", "category", "day"}, "description": "Группировка итогов"}},
+		))),
+		def("update_expense", "Изменить трату пользователя по id. Передавай только изменяемые поля.", object(props{
+			{"id", map[string]any{"type": "integer", "description": "id траты из find_expenses"}},
+			{"amount", str("Новая сумма в рублях")},
+			{"category", category},
+			{"date", str("Новая дата YYYY-MM-DD")},
+			{"comment", str("Новый комментарий")},
 		}, "id")),
-		def("delete_expense", "Удалить трату пользователя по id.", object(map[string]any{
-			"id": map[string]any{"type": "integer", "description": "id траты из find_expenses"},
+		def("delete_expense", "Удалить трату пользователя по id.", object(props{
+			{"id", map[string]any{"type": "integer", "description": "id траты из find_expenses"}},
 		}, "id")),
 	}
+}
+
+// prop is one JSON Schema property.
+type prop struct {
+	name   string
+	schema any
+}
+
+// props marshals as a JSON object that keeps the declared order. Models fill arguments
+// in the order they see the properties; a map would sort them, putting "id" after the
+// fields to change, and some models then emit {"id":N} alone.
+type props []prop
+
+func (ps props) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, p := range ps {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		k, err := json.Marshal(p.name)
+		if err != nil {
+			return nil, err
+		}
+		v, err := json.Marshal(p.schema)
+		if err != nil {
+			return nil, err
+		}
+		b.Write(k)
+		b.WriteByte(':')
+		b.Write(v)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
 }
 
 // execute runs one tool call and returns the tool message content, a trace step and,
