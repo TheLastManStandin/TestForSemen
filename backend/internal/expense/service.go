@@ -161,9 +161,6 @@ type Patch struct {
 }
 
 func (s *Service) Update(ctx context.Context, scope Scope, id int64, p Patch) (domain.Expense, error) {
-	if p.UserID != nil && scope.UserID != nil && *p.UserID != *scope.UserID {
-		return domain.Expense{}, domain.Invalid("user_id", "нельзя передать трату другому члену семьи")
-	}
 	if p.SpentAt != nil {
 		p.SpentAt = new(domain.DateOf(*p.SpentAt))
 	}
@@ -175,6 +172,9 @@ func (s *Service) Update(ctx context.Context, scope Scope, id int64, p Patch) (d
 	cur, err := s.repo.Get(ctx, id, scope.UserID)
 	if err != nil {
 		return domain.Expense{}, err
+	}
+	if p.UserID != nil && scope.UserID != nil && *p.UserID != *scope.UserID {
+		return domain.Expense{}, domain.Invalid("user_id", "нельзя передать трату другому члену семьи")
 	}
 	if p.Version != nil && *p.Version != cur.Version {
 		return domain.Expense{}, domain.ErrConflict
