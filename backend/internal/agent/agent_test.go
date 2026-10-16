@@ -296,7 +296,7 @@ func TestRunLLMErrorAfterToolStepClosesTurn(t *testing.T) {
 		errs:    map[int]error{1: errors.New("boom")},
 	})
 	_, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350"})
-	require.Error(t, err)
+	require.ErrorIs(t, err, agent.ErrPartial)
 	assert.Len(t, own(t, f.svc, papa), 1, "the side effect happened")
 
 	raw, err := f.mem.RecentChat(ctx, papa, fixedNow.Add(-time.Hour), 100)
@@ -310,6 +310,6 @@ func TestRunLLMErrorAfterToolStepClosesTurn(t *testing.T) {
 		last = m
 	}
 	assert.Equal(t, []llm.Role{llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleAssistant}, roles)
-	assert.Equal(t, "Не удалось закончить ответ из-за ошибки. Выполненные действия сохранены.", last.Content)
+	assert.Equal(t, "Не удалось закончить ответ, но действия выполнены:\n• записал: кофе — 350 ₽, еда, 15 октября", last.Content)
 	assert.Contains(t, f.mem.Traces()[0].Error, "boom")
 }

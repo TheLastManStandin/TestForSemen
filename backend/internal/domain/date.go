@@ -32,3 +32,15 @@ var weekdaysRU = [...]string{"воскресенье", "понедельник",
 
 // WeekdayRU returns the Russian weekday name.
 func WeekdayRU(t time.Time) string { return weekdaysRU[t.Weekday()] }
+
+var monthsGenitiveRU = [...]string{"января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"}
+
+// HumanDate renders a domain date for the member, e.g. "14 октября";
+// the year is added only when it differs from today's.
+func HumanDate(d, today time.Time) string {
+	s := fmt.Sprintf("%d %s", d.Day(), monthsGenitiveRU[d.Month()-1])
+	if d.Year() != today.Year() {
+		s += fmt.Sprintf(" %d", d.Year())
+	}
+	return s
+}

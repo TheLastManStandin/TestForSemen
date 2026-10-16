@@ -54,9 +54,10 @@ type Input struct {
 
 // Result is the reply for the member plus run details.
 type Result struct {
-	Reply string
-	Steps []domain.TraceStep
-	Usage llm.Usage
+	Reply   string
+	Steps   []domain.TraceStep
+	Usage   llm.Usage
+	Changes []Change // successful add/update/delete calls, in order; may be non-empty with a nil error (step limit)
 }
 
 // ErrTooManySteps is recorded in the trace when the loop hits MaxIterations.
@@ -66,9 +67,6 @@ var ErrTooManySteps = errors.New("agent: too many tool iterations")
 const ReplyTooManySteps = "Не получилось разобраться с запросом, попробуй сформулировать иначе"
 
 const replyEmpty = "Готово."
-
-// replyInterrupted closes a turn that failed after tools already ran, so a retry sees their effects.
-const replyInterrupted = "Не удалось закончить ответ из-за ошибки. Выполненные действия сохранены."
 
 // Agent is safe for concurrent use; runs for the same member are serialized.
 type Agent struct {
@@ -99,7 +97,10 @@ func New(client llm.Client, svc *expense.Service, history History, traces TraceS
 }
 
 // Run handles one message. The error is non-nil only for infrastructure failures;
-// a trace is saved in every case.
+// a trace is saved in every case. If the failure came after the turn had already changed
+// data, the error wraps ErrPartial and Result.Reply is a factual summary of the changes
+// for the member. Hitting the step limit is not an error: Reply is then ReplyTooManySteps,
+// or the summary of changes if there were any.
 func (a *Agent) Run(ctx context.Context, in Input) (Result, error) {
 	if in.Source == "" {
 		in.Source = SourceText
@@ -147,11 +148,15 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 	for range a.cfg.MaxIterations {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{Model: a.cfg.Model, Messages: msgs, Tools: toolDefs, Temperature: &temperature})
 		if err != nil {
-			if len(res.Steps) > 0 {
-				turn = append(turn, llm.Message{Role: llm.RoleAssistant, Content: replyInterrupted})
-				a.saveTurn(ctx, in.UserID, turn)
+			err = fmt.Errorf("llm: %w", err)
+			if len(res.Changes) == 0 {
+				return res, err // nothing changed: the turn is dropped and retrying is safe
 			}
-			return res, fmt.Errorf("llm: %w", err)
+			// Close the turn with the summary so the next turn knows what was done.
+			res.Reply = summarizeChanges(res.Changes, a.svc.Today())
+			turn = append(turn, llm.Message{Role: llm.RoleAssistant, Content: res.Reply})
+			a.saveTurn(ctx, in.UserID, turn)
+			return res, fmt.Errorf("%w: %w", ErrPartial, err)
 		}
 		res.Usage.Add(resp.Usage)
 
@@ -169,8 +174,11 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 			return res, nil
 		}
 		for _, call := range reply.ToolCalls {
-			out, step := a.execute(ctx, in.UserID, call)
+			out, step, change := a.execute(ctx, in.UserID, call)
 			res.Steps = append(res.Steps, step)
+			if change != nil {
+				res.Changes = append(res.Changes, *change)
+			}
 			toolMsg := llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: out}
 			msgs = append(msgs, toolMsg)
 			turn = append(turn, toolMsg)
@@ -178,9 +186,14 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 	}
 
 	res.Reply = ReplyTooManySteps
+	err = ErrTooManySteps
+	if len(res.Changes) > 0 {
+		res.Reply = summarizeChanges(res.Changes, a.svc.Today())
+		err = fmt.Errorf("%w: %w", ErrPartial, err)
+	}
 	turn = append(turn, llm.Message{Role: llm.RoleAssistant, Content: res.Reply})
 	a.saveTurn(ctx, in.UserID, turn)
-	return res, ErrTooManySteps
+	return res, err
 }
 
 // loadHistory returns recent messages starting at a user message, so a tool result

@@ -95,11 +95,16 @@ func buildToolDefs() []llm.Tool {
 	}
 }
 
-// execute runs one tool call and returns the tool message content plus a trace step.
-func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) (string, domain.TraceStep) {
+// execute runs one tool call and returns the tool message content, a trace step and,
+// for a successful add/update/delete, the change it made.
+func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) (string, domain.TraceStep, *Change) {
 	start := time.Now()
 	out, err := a.dispatch(ctx, userID, call.Function.Name, []byte(call.Function.Arguments))
 	result := out
+	var change *Change
+	if cr, ok := out.(changeResult); ok && err == nil {
+		change = &cr.change
+	}
 	if err != nil {
 		if isInternal(err) {
 			a.log.ErrorContext(ctx, "agent tool failed", "tool", call.Function.Name, "user_id", userID, "err", err)
@@ -114,7 +119,7 @@ func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) (s
 	if !json.Valid(args) {
 		args, _ = json.Marshal(call.Function.Arguments)
 	}
-	return string(data), domain.TraceStep{Tool: call.Function.Name, Args: args, Result: data, Ms: time.Since(start).Milliseconds()}
+	return string(data), domain.TraceStep{Tool: call.Function.Name, Args: args, Result: data, Ms: time.Since(start).Milliseconds()}, change
 }
 
 func (a *Agent) dispatch(ctx context.Context, userID int64, name string, raw []byte) (any, error) {
@@ -161,7 +166,7 @@ func (a *Agent) addExpense(ctx context.Context, userID int64, raw []byte) (any, 
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"created": view(e)}, nil
+	return changeResult{payload: map[string]any{"created": view(e)}, change: Change{Kind: ChangeAdd, Expense: e}}, nil
 }
 
 func (a *Agent) findExpenses(ctx context.Context, userID int64, raw []byte) (any, error) {
@@ -276,11 +281,15 @@ func (a *Agent) updateExpense(ctx context.Context, userID int64, raw []byte) (an
 	if patch.Amount == nil && patch.Category == nil && patch.SpentAt == nil && patch.Comment == nil {
 		return nil, domain.Invalid("fields", "не передано ни одного поля для изменения")
 	}
+	before, err := a.svc.Get(ctx, expense.Own(userID), int64(args.ID))
+	if err != nil {
+		return nil, err
+	}
 	e, err := a.svc.Update(ctx, expense.Own(userID), int64(args.ID), patch)
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"updated": view(e)}, nil
+	return changeResult{payload: map[string]any{"updated": view(e)}, change: Change{Kind: ChangeUpdate, Expense: e, Before: &before}}, nil
 }
 
 func (a *Agent) deleteExpense(ctx context.Context, userID int64, raw []byte) (any, error) {
@@ -297,7 +306,7 @@ func (a *Agent) deleteExpense(ctx context.Context, userID int64, raw []byte) (an
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"deleted": view(e)}, nil
+	return changeResult{payload: map[string]any{"deleted": view(e)}, change: Change{Kind: ChangeDelete, Expense: e}}, nil
 }
 
 // resolveRange turns a period or from/to into dates. With required, a missing range means
