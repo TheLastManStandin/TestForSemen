@@ -71,10 +71,10 @@ func TestOnUpdateLogsIDs(t *testing.T) {
 }
 
 func TestToIncoming(t *testing.T) {
-	text := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 10}, From: &models.User{ID: 111}, Text: "кофе 350"}}
+	text := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 10, Type: models.ChatTypePrivate}, From: &models.User{ID: 111}, Text: "кофе 350"}}
 	in, ok := toIncoming(text)
 	assert.True(t, ok)
-	assert.Equal(t, Incoming{ChatID: 10, UserID: 111, Text: "кофе 350"}, in)
+	assert.Equal(t, Incoming{ChatID: 10, ChatType: "private", UserID: 111, Text: "кофе 350"}, in)
 
 	voice := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 10}, From: &models.User{ID: 111}, Voice: &models.Voice{FileID: "f1", Duration: 4}}}
 	in, ok = toIncoming(voice)
@@ -91,4 +91,13 @@ func TestToIncoming(t *testing.T) {
 	assert.True(t, ok)
 	assert.Empty(t, in.Text)
 	assert.Nil(t, in.Voice)
+}
+
+func TestToIncomingCarriesChatType(t *testing.T) {
+	for _, ct := range []models.ChatType{models.ChatTypePrivate, models.ChatTypeGroup, models.ChatTypeSupergroup, models.ChatTypeChannel} {
+		u := &models.Update{Message: &models.Message{Chat: models.Chat{ID: 10, Type: ct}, From: &models.User{ID: 111}, Text: "x"}}
+		in, ok := toIncoming(u)
+		assert.True(t, ok)
+		assert.Equal(t, string(ct), in.ChatType)
+	}
 }

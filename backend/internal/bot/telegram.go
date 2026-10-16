@@ -66,7 +66,7 @@ func toIncoming(u *models.Update) (Incoming, bool) {
 		return Incoming{}, false
 	}
 	m := u.Message
-	in := Incoming{ChatID: m.Chat.ID, UserID: m.From.ID, Text: m.Text}
+	in := Incoming{ChatID: m.Chat.ID, ChatType: string(m.Chat.Type), UserID: m.From.ID, Text: m.Text}
 	if m.Voice != nil {
 		in.Voice = &Voice{FileID: m.Voice.FileID, Duration: m.Voice.Duration}
 	}
