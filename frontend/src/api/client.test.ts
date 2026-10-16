@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, fieldErrors, unwrap } from "./client";
+import { ApiError, fieldErrors, isConflict, unwrap } from "./client";
 
 function response(status: number): Response {
   return new Response(null, { status });
@@ -29,5 +29,13 @@ describe("fieldErrors", () => {
     const err = new ApiError(422, { title: "x", status: 422, errors: [{ field: "spent_at", message: "в будущем" }] });
     expect(fieldErrors(err)).toEqual({ spent_at: "в будущем" });
     expect(fieldErrors(new Error("boom"))).toEqual({});
+  });
+});
+
+describe("isConflict", () => {
+  it("detects a 409 problem", () => {
+    expect(isConflict(new ApiError(409, { title: "Конфликт изменений", status: 409 }))).toBe(true);
+    expect(isConflict(new ApiError(422))).toBe(false);
+    expect(isConflict(new Error("x"))).toBe(false);
   });
 });

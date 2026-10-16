@@ -1,15 +1,16 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { fieldErrors, type Expense, type Member } from "@/api/client";
-import { useCreateExpense, useUpdateExpense } from "@/api/hooks";
+import { ApiError, fieldErrors, isConflict, type Expense, type Member } from "@/api/client";
+import { useCreateExpense, useRefreshExpense, useUpdateExpense } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { buildExpensePatch } from "@/lib/expensePatch";
 import { splitFieldErrors } from "@/lib/formErrors";
 import { CATEGORY_CODES, CATEGORY_LABELS, normalizeAmount } from "@/lib/format";
 import { todayISO } from "@/lib/period";
@@ -48,6 +49,10 @@ function initialValues(expense: Expense | undefined, defaultMemberId: number | n
 export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMemberId }: Props) {
   const create = useCreateExpense();
   const update = useUpdateExpense();
+  const refreshExpense = useRefreshExpense();
+  // The server state the edit is based on: the opened expense, or a fresh copy loaded after a conflict.
+  const [reloaded, setReloaded] = useState<{ source: Expense; fresh: Expense } | null>(null);
+  const base = expense && reloaded?.source === expense ? reloaded.fresh : expense;
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: initialValues(expense, defaultMemberId) });
   const { errors, isSubmitting } = form.formState;
 
@@ -55,22 +60,58 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
     if (open) form.reset(initialValues(expense, defaultMemberId));
   }, [open, expense, defaultMemberId, form]);
 
-  const onSubmit = form.handleSubmit(async (v) => {
-    const body = {
-      user_id: Number(v.user_id),
-      amount: normalizeAmount(v.amount)!,
-      category: v.category,
-      spent_at: v.spent_at,
-      comment: v.comment.trim(),
-    };
+  const conflictToastId = (id: number) => `expense-conflict-${id}`;
+
+  const setOpen = (next: boolean) => {
+    if (!next) {
+      setReloaded(null);
+      if (expense) toast.dismiss(conflictToastId(expense.id));
+    }
+    onOpenChange(next);
+  };
+
+  // Loads the current server version and keeps the user's edits on top of it, so they can review and save again.
+  const reloadAfterConflict = async (source: Expense) => {
     try {
-      if (expense) {
-        await update.mutateAsync({ id: expense.id, patch: body });
-      } else {
-        await create.mutateAsync(body);
-      }
-      onOpenChange(false);
+      const fresh = await refreshExpense(source.id);
+      setReloaded({ source, fresh });
+      form.reset(initialValues(fresh, defaultMemberId), { keepDirtyValues: true });
+      toast.info("Данные обновлены. Проверьте поля и сохраните ещё раз.");
     } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        toast.error("Трату уже удалили.");
+        setOpen(false);
+      } else {
+        toast.error(err instanceof Error ? err.message : "Не удалось обновить данные");
+      }
+    }
+  };
+
+  const onSubmit = form.handleSubmit(async (v) => {
+    try {
+      if (base) {
+        const patch = buildExpensePatch(initialValues(base, defaultMemberId), v, base.version);
+        if (patch) await update.mutateAsync({ id: base.id, patch });
+      } else {
+        await create.mutateAsync({
+          user_id: Number(v.user_id),
+          amount: normalizeAmount(v.amount)!,
+          category: v.category,
+          spent_at: v.spent_at,
+          comment: v.comment.trim(),
+        });
+      }
+      setOpen(false);
+    } catch (err) {
+      if (expense && isConflict(err)) {
+        const source = expense;
+        toast.error(err.message, {
+          id: conflictToastId(source.id),
+          duration: Infinity,
+          action: { label: "Обновить", onClick: () => void reloadAfterConflict(source) },
+        });
+        return;
+      }
       const { placed, unplaced } = splitFieldErrors(fieldErrors(err), Object.keys(schema.shape));
       for (const [field, message] of placed) form.setError(field as keyof FormValues, { message });
       if (unplaced.length > 0) toast.error(unplaced.join("; "));
@@ -79,7 +120,7 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   });
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{expense ? "Изменить трату" : "Новая трата"}</DialogTitle>
@@ -151,7 +192,7 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
           </div>
         </form>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => setOpen(false)}>
             Отмена
           </Button>
           <Button type="submit" form="expense-form" disabled={isSubmitting}>

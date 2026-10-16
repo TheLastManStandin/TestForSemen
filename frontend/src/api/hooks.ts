@@ -84,6 +84,15 @@ export function useUpdateExpense() {
   });
 }
 
+/** Refetches one expense (after a 409) and refreshes the lists and stats around it. */
+export function useRefreshExpense() {
+  const invalidate = useInvalidateExpenses();
+  return async (id: number) => {
+    const [expense] = await Promise.all([unwrap(api.GET("/expenses/{id}", { params: { path: { id } } })), invalidate()]);
+    return expense;
+  };
+}
+
 export function useDeleteExpense() {
   const invalidate = useInvalidateExpenses();
   return useMutation({
