@@ -145,21 +145,21 @@ func newEnv(t *testing.T, withSTT bool) *env {
 
 func TestNonMemberIsRefusedWithoutLLM(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: stranger, Text: "кофе 350"})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: stranger, Text: "кофе 350"})
 	assert.Equal(t, "Этот бот семейный. Попросите главу семьи добавить ваш ID: 999", e.msg.last(t))
 	assert.Empty(t, e.agent.inputs)
 }
 
 func TestStartCommandGreets(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "/start"})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Text: "/start"})
 	assert.Contains(t, e.msg.last(t), "кофе 350")
 	assert.Empty(t, e.agent.inputs)
 }
 
 func TestTextGoesToAgent(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "  кофе 350  "})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Text: "  кофе 350  "})
 	require.Len(t, e.agent.inputs, 1)
 	in := e.agent.inputs[0]
 	assert.Equal(t, member, in.UserID)
@@ -173,13 +173,13 @@ func TestTextGoesToAgent(t *testing.T) {
 func TestAgentErrorIsPolite(t *testing.T) {
 	e := newEnv(t, true)
 	e.agent.err = errors.New("llm down")
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "кофе 350"})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Text: "кофе 350"})
 	assert.Equal(t, "Что-то пошло не так, попробуй ещё раз через минуту", e.msg.last(t))
 }
 
 func TestVoiceIsTranscribedAndEchoed(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 	assert.Equal(t, "ogg", e.stt.format)
 	assert.Equal(t, []byte("OggS"), e.stt.audio)
 	require.Len(t, e.agent.inputs, 1)
@@ -192,7 +192,7 @@ func TestVoiceIsTranscribedAndEchoed(t *testing.T) {
 
 func TestVoiceTooLongIsRejectedBeforeDownload(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 61}})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 61}})
 	assert.Contains(t, e.msg.last(t), "60 секунд")
 	assert.Zero(t, e.msg.downloads)
 	assert.Zero(t, e.stt.calls)
@@ -200,7 +200,7 @@ func TestVoiceTooLongIsRejectedBeforeDownload(t *testing.T) {
 
 func TestVoiceDisabled(t *testing.T) {
 	e := newEnv(t, false)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 	assert.Contains(t, e.msg.last(t), "выключены")
 	assert.Empty(t, e.agent.inputs)
 }
@@ -213,7 +213,7 @@ func TestVoiceTranscriptionFailure(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := newEnv(t, true)
 			*e.stt = *s
-			e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+			e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 			assert.Equal(t, "Не разобрал голосовое 🙏 Попробуй ещё раз или напиши текстом", e.msg.last(t))
 			assert.NotContains(t, e.msg.last(t), "stt down")
 			assert.Empty(t, e.agent.inputs)
@@ -223,7 +223,7 @@ func TestVoiceTranscriptionFailure(t *testing.T) {
 
 func TestUnsupportedMessage(t *testing.T) {
 	e := newEnv(t, true)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member})
 	assert.Equal(t, "Я понимаю текст и голосовые 🙂", e.msg.last(t))
 	assert.Empty(t, e.agent.inputs)
 }
@@ -231,7 +231,7 @@ func TestUnsupportedMessage(t *testing.T) {
 func TestLongReplyIsTruncated(t *testing.T) {
 	e := newEnv(t, true)
 	e.agent.reply = strings.Repeat("я", 5000)
-	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "покажи всё"})
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Text: "покажи всё"})
 	reply := e.msg.last(t)
 	assert.LessOrEqual(t, utf8.RuneCountInString(reply), 4096)
 	assert.True(t, strings.HasSuffix(reply, "…"))
@@ -241,7 +241,7 @@ func TestVoiceFailuresAreTraced(t *testing.T) {
 	t.Run("stt error", func(t *testing.T) {
 		e := newEnv(t, true)
 		*e.stt = fakeSTT{err: errors.New("stt down")}
-		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 		require.Len(t, e.traces.traces, 1)
 		tr := e.traces.traces[0]
 		assert.Equal(t, "voice", tr.Source)
@@ -253,14 +253,14 @@ func TestVoiceFailuresAreTraced(t *testing.T) {
 	t.Run("empty transcript", func(t *testing.T) {
 		e := newEnv(t, true)
 		*e.stt = fakeSTT{text: "  "}
-		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 		require.Len(t, e.traces.traces, 1)
 		assert.Equal(t, "empty transcript", e.traces.traces[0].Error)
 		assert.NotNil(t, e.traces.traces[0].STTms)
 	})
 	t.Run("download error", func(t *testing.T) {
 		e := newEnv(t, true)
-		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "missing", Duration: 3}})
+		e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "missing", Duration: 3}})
 		require.Len(t, e.traces.traces, 1)
 		tr := e.traces.traces[0]
 		assert.Equal(t, "voice", tr.Source)
@@ -271,7 +271,7 @@ func TestVoiceFailuresAreTraced(t *testing.T) {
 	t.Run("nil sink is fine", func(t *testing.T) {
 		e := newEnv(t, true)
 		h := bot.NewHandler(e.msg, e.agent, fakeMembers{member: true}, &fakeSTT{err: errors.New("x")}, bot.Config{}, nil)
-		h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
+		h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}})
 		assert.Contains(t, e.msg.last(t), "Не разобрал")
 	})
 }
@@ -287,6 +287,36 @@ func (blockingAgent) Run(ctx context.Context, _ agent.Input) (agent.Result, erro
 func TestInternalErrorIsSentAfterMessageTimeout(t *testing.T) {
 	e := newEnv(t, true)
 	h := bot.NewHandler(e.msg, blockingAgent{}, fakeMembers{member: true}, e.stt, bot.Config{MessageTimeout: 20 * time.Millisecond}, nil)
-	h.Handle(t.Context(), bot.Incoming{ChatID: chat, UserID: member, Text: "кофе 200"})
+	h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "private", UserID: member, Text: "кофе 200"})
 	assert.Equal(t, "Что-то пошло не так, попробуй ещё раз через минуту", e.msg.last(t))
+}
+
+func TestHandle_NonPrivateChatsAreCutOff(t *testing.T) {
+	for _, chatType := range []string{"group", "supergroup", "channel", ""} {
+		for _, voice := range []bool{false, true} {
+			e := newEnv(t, true)
+			in := bot.Incoming{ChatID: chat, ChatType: chatType, UserID: member, Text: "покажи все траты"}
+			if voice {
+				in = bot.Incoming{ChatID: chat, ChatType: chatType, UserID: member, Voice: &bot.Voice{FileID: "voice-1", Duration: 3}}
+			}
+			e.h.Handle(t.Context(), in)
+
+			assert.Empty(t, e.agent.inputs, "type=%q voice=%v", chatType, voice)
+			assert.Zero(t, e.stt.calls, "type=%q voice=%v", chatType, voice)
+			assert.Zero(t, e.msg.downloads, "type=%q voice=%v", chatType, voice)
+			if chatType == "group" || chatType == "supergroup" {
+				assert.Equal(t, []string{"Я работаю только в личных сообщениях — напишите мне напрямую."}, e.msg.sent)
+			} else {
+				assert.Empty(t, e.msg.sent, "type=%q: silent", chatType)
+			}
+		}
+	}
+}
+
+func TestHandle_NonMemberInGroupGetsNoIDRefusal(t *testing.T) {
+	e := newEnv(t, true)
+	e.h.Handle(t.Context(), bot.Incoming{ChatID: chat, ChatType: "group", UserID: stranger, Text: "кофе 350"})
+	assert.Empty(t, e.agent.inputs)
+	require.Len(t, e.msg.sent, 1)
+	assert.NotContains(t, e.msg.sent[0], "999")
 }

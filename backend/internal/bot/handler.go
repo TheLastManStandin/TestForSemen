@@ -17,6 +17,7 @@ import (
 const (
 	maxMessageRunes = 4096
 	replyTimeout    = 10 * time.Second
+	chatTypePrivate = "private"
 )
 
 // Messenger is the part of Telegram the handler needs.
@@ -38,10 +39,11 @@ type MemberChecker interface {
 
 // Incoming is a transport-independent message.
 type Incoming struct {
-	ChatID int64
-	UserID int64
-	Text   string
-	Voice  *Voice
+	ChatID   int64
+	ChatType string // Telegram chat type: "private", "group", "supergroup", "channel"
+	UserID   int64
+	Text     string
+	Voice    *Voice
 }
 
 // Voice is a voice note attachment.
@@ -90,6 +92,16 @@ func NewHandler(msg Messenger, ag AgentRunner, members MemberChecker, transcribe
 func (h *Handler) Handle(ctx context.Context, in Incoming) {
 	ctx, cancel := context.WithTimeout(ctx, h.cfg.MessageTimeout)
 	defer cancel()
+
+	// Expenses are handled in private chats only: a reply in a group would be
+	// visible to everyone there. Cut off before membership, STT and the agent.
+	// Fail closed: an unknown chat type is treated as non-private.
+	if in.ChatType != chatTypePrivate {
+		if in.ChatType == "group" || in.ChatType == "supergroup" {
+			h.reply(ctx, in.ChatID, textPrivateOnly)
+		}
+		return
+	}
 
 	ok, err := h.members.MemberExists(ctx, in.UserID)
 	if err != nil {
