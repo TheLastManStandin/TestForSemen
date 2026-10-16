@@ -83,6 +83,7 @@ func (r *Repo) Insert(_ context.Context, e domain.Expense) (domain.Expense, erro
 	e.MemberName = name
 	e.CreatedAt = r.stamp()
 	e.UpdatedAt = e.CreatedAt
+	e.Version = 1
 	r.items[e.ID] = e
 	return e, nil
 }
@@ -133,21 +134,38 @@ func (r *Repo) Count(_ context.Context, q expense.ListQuery) (int, domain.Money,
 	return len(matched), sum, nil
 }
 
-func (r *Repo) Update(_ context.Context, e domain.Expense, owner *int64) (domain.Expense, error) {
+func (r *Repo) Update(_ context.Context, id int64, p expense.Patch, owner *int64) (domain.Expense, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	cur, ok := r.items[e.ID]
-	if !ok || (owner != nil && cur.UserID != *owner) {
+	e, ok := r.items[id]
+	if !ok || (owner != nil && e.UserID != *owner) {
 		return domain.Expense{}, domain.ErrNotFound
 	}
-	name, ok := r.members[e.UserID]
-	if !ok {
-		return domain.Expense{}, fmt.Errorf("member %d does not exist", e.UserID)
+	if p.Version != nil && *p.Version != e.Version {
+		return domain.Expense{}, domain.ErrConflict
 	}
-	e.CreatedAt = cur.CreatedAt
+	if p.UserID != nil {
+		if _, ok := r.members[*p.UserID]; !ok {
+			return domain.Expense{}, fmt.Errorf("member %d does not exist", *p.UserID)
+		}
+		e.UserID = *p.UserID
+	}
+	if p.Amount != nil {
+		e.Amount = *p.Amount
+	}
+	if p.Category != nil {
+		e.Category = *p.Category
+	}
+	if p.SpentAt != nil {
+		e.SpentAt = *p.SpentAt
+	}
+	if p.Comment != nil {
+		e.Comment = *p.Comment
+	}
+	e.Version++
 	e.UpdatedAt = r.stamp()
-	e.MemberName = name
-	r.items[e.ID] = e
+	r.items[id] = e
+	e.MemberName = r.members[e.UserID]
 	return e, nil
 }
 

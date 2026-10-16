@@ -147,23 +147,56 @@ func (s *Service) List(ctx context.Context, scope Scope, q ListQuery) (Page, err
 }
 
 // Patch holds optional field updates. Comment "" clears the comment.
+// Only the provided fields are written, so concurrent edits of other fields survive.
 type Patch struct {
 	UserID   *int64
 	Amount   *domain.Money
 	Category *domain.Category
 	SpentAt  *time.Time
 	Comment  *string
+	// Version, if set, is the version the caller last saw (optimistic concurrency, web panel).
+	// A mismatch with the stored version yields domain.ErrConflict and nothing is written.
+	// The bot sends no version: its partial updates simply apply on top of the current row.
+	Version *int64
 }
 
 func (s *Service) Update(ctx context.Context, scope Scope, id int64, p Patch) (domain.Expense, error) {
-	e, err := s.repo.Get(ctx, id, scope.UserID)
+	if p.UserID == nil && p.Amount == nil && p.Category == nil && p.SpentAt == nil && p.Comment == nil {
+		// Nothing to change: do not bump the version or publish an event.
+		return domain.Expense{}, domain.Invalid("fields", "не передано ни одного поля для изменения")
+	}
+	if p.SpentAt != nil {
+		p.SpentAt = new(domain.DateOf(*p.SpentAt))
+	}
+	if p.Comment != nil {
+		p.Comment = new(strings.TrimSpace(*p.Comment))
+	}
+	// Validate the merged result. The read is only for validation (and a fast conflict answer):
+	// the repository write re-checks owner and version atomically and touches only patched fields.
+	cur, err := s.repo.Get(ctx, id, scope.UserID)
 	if err != nil {
 		return domain.Expense{}, err
 	}
+	if p.UserID != nil && scope.UserID != nil && *p.UserID != *scope.UserID {
+		return domain.Expense{}, domain.Invalid("user_id", "нельзя передать трату другому члену семьи")
+	}
+	if p.Version != nil && *p.Version != cur.Version {
+		return domain.Expense{}, domain.ErrConflict
+	}
+	if err := s.validate(ctx, apply(cur, p)); err != nil {
+		return domain.Expense{}, err
+	}
+	updated, err := s.repo.Update(ctx, id, p, scope.UserID)
+	if err != nil {
+		return domain.Expense{}, err
+	}
+	s.pub.Publish(events.Event{Type: events.ExpenseUpdated, Expense: updated})
+	return updated, nil
+}
+
+// apply returns e with the non-nil fields of p set.
+func apply(e domain.Expense, p Patch) domain.Expense {
 	if p.UserID != nil {
-		if scope.UserID != nil && *p.UserID != *scope.UserID {
-			return domain.Expense{}, domain.Invalid("user_id", "нельзя передать трату другому члену семьи")
-		}
 		e.UserID = *p.UserID
 	}
 	if p.Amount != nil {
@@ -173,20 +206,12 @@ func (s *Service) Update(ctx context.Context, scope Scope, id int64, p Patch) (d
 		e.Category = *p.Category
 	}
 	if p.SpentAt != nil {
-		e.SpentAt = domain.DateOf(*p.SpentAt)
+		e.SpentAt = *p.SpentAt
 	}
 	if p.Comment != nil {
-		e.Comment = strings.TrimSpace(*p.Comment)
+		e.Comment = *p.Comment
 	}
-	if err := s.validate(ctx, e); err != nil {
-		return domain.Expense{}, err
-	}
-	updated, err := s.repo.Update(ctx, e, scope.UserID)
-	if err != nil {
-		return domain.Expense{}, err
-	}
-	s.pub.Publish(events.Event{Type: events.ExpenseUpdated, Expense: updated})
-	return updated, nil
+	return e
 }
 
 // Delete removes an expense and returns what was deleted.

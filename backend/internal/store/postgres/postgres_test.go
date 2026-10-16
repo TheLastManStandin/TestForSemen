@@ -23,6 +23,12 @@ func TestRepositoryContract(t *testing.T) {
 	})
 }
 
+func TestUpdateConcurrency(t *testing.T) {
+	expensetest.RunUpdateConcurrency(t, func(t *testing.T) expense.Repository {
+		return postgres.New(pgtest.Pool(t))
+	})
+}
+
 func newStore(t *testing.T) *postgres.Store {
 	t.Helper()
 	s := postgres.New(pgtest.Pool(t))

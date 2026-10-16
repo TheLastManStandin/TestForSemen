@@ -201,13 +201,12 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 	t.Run("update", func(t *testing.T) {
 		r := setup(t)
 		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
+		assert.Equal(t, int64(1), e.Version)
 
-		e.Amount = 45000
-		e.Category = domain.CategoryOther
-		e.SpentAt = Date("2026-10-11")
-		e.Comment = "обед"
-		e.UserID = Mama.TelegramID
-		upd, err := r.Update(ctx, e, nil)
+		upd, err := r.Update(ctx, e.ID, expense.Patch{
+			Amount: ptr(domain.Money(45000)), Category: ptr(domain.CategoryOther), SpentAt: ptr(Date("2026-10-11")),
+			Comment: ptr("обед"), UserID: ptr(Mama.TelegramID),
+		}, nil)
 		require.NoError(t, err)
 		assert.Equal(t, domain.Money(45000), upd.Amount)
 		assert.Equal(t, domain.CategoryOther, upd.Category)
@@ -215,14 +214,63 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		assert.Equal(t, "обед", upd.Comment)
 		assert.Equal(t, Mama.TelegramID, upd.UserID)
 		assert.Equal(t, "Мама", upd.MemberName)
+		assert.Equal(t, int64(2), upd.Version)
 		assert.False(t, upd.UpdatedAt.Before(upd.CreatedAt))
+		assert.True(t, upd.CreatedAt.Equal(e.CreatedAt))
 
 		got, err := r.Get(ctx, e.ID, nil)
 		require.NoError(t, err)
 		assert.Equal(t, domain.Money(45000), got.Amount)
+		assert.Equal(t, int64(2), got.Version)
 
-		_, err = r.Update(ctx, domain.Expense{ID: 9999, UserID: Papa.TelegramID, Amount: 1, Category: domain.CategoryFood, SpentAt: Date("2026-10-10")}, nil)
+		_, err = r.Update(ctx, 9999, expense.Patch{Amount: ptr(domain.Money(1))}, nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = r.Update(ctx, 9999, expense.Patch{Amount: ptr(domain.Money(1)), Version: ptr(int64(1))}, nil)
+		assert.ErrorIs(t, err, domain.ErrNotFound, "missing beats version mismatch")
+	})
+
+	t.Run("update touches only provided fields", func(t *testing.T) {
+		r := setup(t)
+		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
+
+		upd, err := r.Update(ctx, e.ID, expense.Patch{Comment: ptr("")}, nil)
+		require.NoError(t, err)
+		assert.Empty(t, upd.Comment, "empty comment clears it")
+		assert.Equal(t, domain.Money(35000), upd.Amount)
+		assert.Equal(t, domain.CategoryFood, upd.Category)
+		assert.Equal(t, "2026-10-10", domain.FormatDate(upd.SpentAt))
+		assert.Equal(t, Papa.TelegramID, upd.UserID)
+		assert.Equal(t, "Папа", upd.MemberName)
+
+		upd, err = r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(50000))}, nil)
+		require.NoError(t, err)
+		assert.Empty(t, upd.Comment)
+		assert.Equal(t, domain.Money(50000), upd.Amount)
+		assert.Equal(t, int64(3), upd.Version)
+	})
+
+	t.Run("update checks the expected version", func(t *testing.T) {
+		r := setup(t)
+		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
+
+		upd, err := r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(45000)), Version: ptr(int64(1))}, nil)
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), upd.Version)
+
+		_, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("чай"), Version: ptr(int64(1))}, nil)
+		assert.ErrorIs(t, err, domain.ErrConflict)
+
+		got, err := r.Get(ctx, e.ID, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "кофе", got.Comment, "a conflicting update writes nothing")
+		assert.Equal(t, domain.Money(45000), got.Amount)
+		assert.Equal(t, int64(2), got.Version)
+		assert.True(t, got.UpdatedAt.Equal(upd.UpdatedAt))
+
+		upd, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("чай"), Version: ptr(int64(2))}, ptr(Papa.TelegramID))
+		require.NoError(t, err)
+		assert.Equal(t, "чай", upd.Comment)
+		assert.Equal(t, int64(3), upd.Version)
 	})
 
 	t.Run("delete", func(t *testing.T) {
@@ -240,11 +288,10 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		e := insert(t, r, Papa.TelegramID, 35000, domain.CategoryFood, "2026-10-10", "кофе")
 		papa, mama := Papa.TelegramID, Mama.TelegramID
 
-		changed := e
-		changed.Amount = 99900
-		changed.Comment = "чужое"
-		_, err := r.Update(ctx, changed, &mama)
+		_, err := r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(99900)), Comment: ptr("чужое")}, &mama)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("чужое"), Version: ptr(int64(7))}, &mama)
+		assert.ErrorIs(t, err, domain.ErrNotFound, "a foreign row is not found, not a conflict")
 		assert.ErrorIs(t, r.Delete(ctx, e.ID, &mama), domain.ErrNotFound)
 
 		got, err := r.Get(ctx, e.ID, nil)
@@ -252,15 +299,17 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		assert.Equal(t, domain.Money(35000), got.Amount)
 		assert.Equal(t, "кофе", got.Comment)
 		assert.Equal(t, Papa.TelegramID, got.UserID)
+		assert.Equal(t, int64(1), got.Version)
 
 		// owner is checked against the current row, so the owner may reassign it
-		changed.UserID = mama
-		upd, err := r.Update(ctx, changed, &papa)
+		upd, err := r.Update(ctx, e.ID, expense.Patch{UserID: &mama, Amount: ptr(domain.Money(99900))}, &papa)
 		require.NoError(t, err)
 		assert.Equal(t, mama, upd.UserID)
 		assert.Equal(t, domain.Money(99900), upd.Amount)
 
 		// now it belongs to mama: papa can no longer touch it
+		_, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("моё")}, &papa)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
 		assert.ErrorIs(t, r.Delete(ctx, e.ID, &papa), domain.ErrNotFound)
 		require.NoError(t, r.Delete(ctx, e.ID, &mama))
 		_, err = r.Get(ctx, e.ID, nil)

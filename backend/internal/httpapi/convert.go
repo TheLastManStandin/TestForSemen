@@ -14,7 +14,7 @@ func toAPIExpense(e domain.Expense) gen.Expense {
 	return gen.Expense{
 		Id: e.ID, UserId: e.UserID, MemberName: e.MemberName, Amount: e.Amount.String(),
 		Category: gen.Category(e.Category), SpentAt: openapi_types.Date{Time: e.SpentAt},
-		Comment: strPtrOrNil(e.Comment), CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt,
+		Comment: strPtrOrNil(e.Comment), CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt, Version: e.Version,
 	}
 }
 

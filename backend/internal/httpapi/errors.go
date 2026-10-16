@@ -33,6 +33,9 @@ func errorHandler(log *slog.Logger) func(http.ResponseWriter, *http.Request, err
 				[]gen.FieldError{{Field: ve.Field, Message: ve.Message}})
 		case errors.Is(err, domain.ErrNotFound):
 			writeProblem(w, http.StatusNotFound, "Не найдено", "", nil)
+		case errors.Is(err, domain.ErrConflict):
+			writeProblem(w, http.StatusConflict, "Конфликт изменений",
+				"Трата была изменена другим пользователем. Обновите данные и повторите.", nil)
 		default:
 			log.ErrorContext(r.Context(), "request failed", "method", r.Method, "path", r.URL.Path, "err", err)
 			writeProblem(w, http.StatusInternalServerError, "Внутренняя ошибка", "", nil)

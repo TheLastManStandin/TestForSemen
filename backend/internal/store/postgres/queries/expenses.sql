@@ -5,19 +5,19 @@ WITH ins AS (
   RETURNING *
 )
 SELECT ins.id, ins.user_id, m.name AS member_name, ins.amount, ins.category, ins.spent_at,
-       ins.comment, ins.created_at, ins.updated_at
+       ins.comment, ins.created_at, ins.updated_at, ins.version
 FROM ins JOIN members m ON m.telegram_id = ins.user_id;
 
 -- name: GetExpense :one
 SELECT e.id, e.user_id, m.name AS member_name, e.amount, e.category, e.spent_at,
-       e.comment, e.created_at, e.updated_at
+       e.comment, e.created_at, e.updated_at, e.version
 FROM expenses e JOIN members m ON m.telegram_id = e.user_id
 WHERE e.id = sqlc.arg(id)
   AND (sqlc.narg(owner_id)::bigint IS NULL OR e.user_id = sqlc.narg(owner_id));
 
 -- name: ListExpenses :many
 SELECT e.id, e.user_id, m.name AS member_name, e.amount, e.category, e.spent_at,
-       e.comment, e.created_at, e.updated_at
+       e.comment, e.created_at, e.updated_at, e.version
 FROM expenses e JOIN members m ON m.telegram_id = e.user_id
 WHERE (sqlc.narg(user_id)::bigint IS NULL OR e.user_id = sqlc.narg(user_id))
   AND (sqlc.narg(date_from)::date IS NULL OR e.spent_at >= sqlc.narg(date_from))
@@ -39,16 +39,24 @@ WHERE (sqlc.narg(user_id)::bigint IS NULL OR e.user_id = sqlc.narg(user_id))
   AND (sqlc.narg(text)::text      IS NULL OR e.comment ILIKE '%' || sqlc.narg(text) || '%');
 
 -- name: UpdateExpense :one
+-- Partial update: NULL args keep the current value. Owner and expected version are checked
+-- against the current row in the same statement, so concurrent edits are never lost silently.
 WITH upd AS (
   UPDATE expenses SET
-    user_id = sqlc.arg(user_id), amount = sqlc.arg(amount), category = sqlc.arg(category),
-    spent_at = sqlc.arg(spent_at), comment = sqlc.arg(comment), updated_at = now()
+    user_id  = COALESCE(sqlc.narg(user_id)::bigint, user_id),
+    amount   = COALESCE(sqlc.narg(amount)::bigint, amount),
+    category = COALESCE(sqlc.narg(category)::text, category),
+    spent_at = COALESCE(sqlc.narg(spent_at)::date, spent_at),
+    comment  = COALESCE(sqlc.narg(comment)::text, comment),
+    version  = version + 1,
+    updated_at = now()
   WHERE expenses.id = sqlc.arg(id)
     AND (sqlc.narg(owner_id)::bigint IS NULL OR expenses.user_id = sqlc.narg(owner_id))
+    AND (sqlc.narg(expected_version)::bigint IS NULL OR expenses.version = sqlc.narg(expected_version))
   RETURNING *
 )
 SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd.spent_at,
-       upd.comment, upd.created_at, upd.updated_at
+       upd.comment, upd.created_at, upd.updated_at, upd.version
 FROM upd JOIN members m ON m.telegram_id = upd.user_id;
 
 -- name: DeleteExpense :execrows

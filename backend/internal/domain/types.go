@@ -14,6 +14,7 @@ type Expense struct {
 	Category   Category
 	SpentAt    time.Time // domain date, see DateOf
 	Comment    string    // empty means no comment
+	Version    int64     // starts at 1, incremented by every update (optimistic concurrency)
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
 }

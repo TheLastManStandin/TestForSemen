@@ -41,3 +41,8 @@ export function fieldErrors(err: unknown): Record<string, string> {
   if (!(err instanceof ApiError) || !err.problem?.errors) return {};
   return Object.fromEntries(err.problem.errors.map((e) => [e.field, e.message]));
 }
+
+/** True for 409: the expense changed on the server since it was loaded. */
+export function isConflict(err: unknown): err is ApiError {
+  return err instanceof ApiError && err.status === 409;
+}

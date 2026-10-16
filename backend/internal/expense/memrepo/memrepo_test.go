@@ -11,3 +11,7 @@ import (
 func TestRepositoryContract(t *testing.T) {
 	expensetest.RunRepositoryContract(t, func(*testing.T) expense.Repository { return memrepo.New() })
 }
+
+func TestUpdateConcurrency(t *testing.T) {
+	expensetest.RunUpdateConcurrency(t, func(*testing.T) expense.Repository { return memrepo.New() })
+}

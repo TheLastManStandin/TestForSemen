@@ -187,6 +187,71 @@ func TestUpdateExpense(t *testing.T) {
 	assert.Contains(t, string(data), `"comment":null`)
 }
 
+func TestUpdateExpensePartialWithoutVersion(t *testing.T) {
+	e := newEnv(t)
+	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
+	assert.Equal(t, int64(1), created.Version)
+	path := fmt.Sprintf("/api/expenses/%d", created.Id)
+
+	// Bot-style change of the amount lands first; the panel then edits only the comment.
+	_, err := e.svc.Update(ctx, expense.Own(papa), created.Id, expense.Patch{Amount: new(domain.Money(45000))})
+	require.NoError(t, err)
+
+	resp, data := e.do(t, http.MethodPatch, path, map[string]any{"comment": "капучино"})
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(data))
+	upd := decode[gen.Expense](t, data)
+	assert.Equal(t, "450.00", upd.Amount, "the other change survives")
+	require.NotNil(t, upd.Comment)
+	assert.Equal(t, "капучино", *upd.Comment)
+	assert.Equal(t, gen.Category("food"), upd.Category)
+	assert.Equal(t, int64(3), upd.Version)
+}
+
+func TestUpdateExpenseStaleVersionIsConflict(t *testing.T) {
+	e := newEnv(t)
+	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
+	path := fmt.Sprintf("/api/expenses/%d", created.Id)
+
+	resp, data := e.do(t, http.MethodPatch, path, map[string]any{"amount": "450", "version": created.Version})
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(data))
+	first := decode[gen.Expense](t, data)
+	assert.Equal(t, created.Version+1, first.Version)
+
+	resp, data = e.do(t, http.MethodPatch, path, map[string]any{"comment": "чай", "version": created.Version})
+	require.Equal(t, http.StatusConflict, resp.StatusCode, string(data))
+	assert.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
+	p := decode[gen.Problem](t, data)
+	assert.Equal(t, http.StatusConflict, p.Status)
+	require.NotNil(t, p.Detail)
+	assert.Contains(t, *p.Detail, "изменена другим пользователем")
+
+	resp, data = e.do(t, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	got := decode[gen.Expense](t, data)
+	assert.Equal(t, "450.00", got.Amount)
+	require.NotNil(t, got.Comment)
+	assert.Equal(t, "кофе", *got.Comment, "the stale update wrote nothing")
+	assert.Equal(t, first.Version, got.Version)
+}
+
+func TestUpdateExpenseEmptyPatchIsValidationError(t *testing.T) {
+	e := newEnv(t)
+	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
+	path := fmt.Sprintf("/api/expenses/%d", created.Id)
+
+	for _, body := range []map[string]any{{}, {"version": created.Version}} {
+		resp, data := e.do(t, http.MethodPatch, path, body)
+		require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode, string(data))
+		p := decode[gen.Problem](t, data)
+		require.NotNil(t, p.Errors)
+		assert.Equal(t, "fields", (*p.Errors)[0].Field)
+		assert.Contains(t, (*p.Errors)[0].Message, "не передано ни одного поля")
+	}
+	resp, data := e.do(t, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, created.Version, decode[gen.Expense](t, data).Version, "nothing written")
+}
+
 func TestDeleteExpense(t *testing.T) {
 	e := newEnv(t)
 	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")

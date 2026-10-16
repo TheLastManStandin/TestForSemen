@@ -90,7 +90,7 @@ func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (i
 
 const getExpense = `-- name: GetExpense :one
 SELECT e.id, e.user_id, m.name AS member_name, e.amount, e.category, e.spent_at,
-       e.comment, e.created_at, e.updated_at
+       e.comment, e.created_at, e.updated_at, e.version
 FROM expenses e JOIN members m ON m.telegram_id = e.user_id
 WHERE e.id = $1
   AND ($2::bigint IS NULL OR e.user_id = $2)
@@ -111,6 +111,7 @@ type GetExpenseRow struct {
 	Comment    string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	Version    int64
 }
 
 func (q *Queries) GetExpense(ctx context.Context, arg GetExpenseParams) (GetExpenseRow, error) {
@@ -126,6 +127,7 @@ func (q *Queries) GetExpense(ctx context.Context, arg GetExpenseParams) (GetExpe
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Version,
 	)
 	return i, err
 }
@@ -134,10 +136,10 @@ const insertExpense = `-- name: InsertExpense :one
 WITH ins AS (
   INSERT INTO expenses (user_id, amount, category, spent_at, comment)
   VALUES ($1, $2, $3, $4, $5)
-  RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at
+  RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at, version
 )
 SELECT ins.id, ins.user_id, m.name AS member_name, ins.amount, ins.category, ins.spent_at,
-       ins.comment, ins.created_at, ins.updated_at
+       ins.comment, ins.created_at, ins.updated_at, ins.version
 FROM ins JOIN members m ON m.telegram_id = ins.user_id
 `
 
@@ -159,6 +161,7 @@ type InsertExpenseRow struct {
 	Comment    string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	Version    int64
 }
 
 func (q *Queries) InsertExpense(ctx context.Context, arg InsertExpenseParams) (InsertExpenseRow, error) {
@@ -180,13 +183,14 @@ func (q *Queries) InsertExpense(ctx context.Context, arg InsertExpenseParams) (I
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Version,
 	)
 	return i, err
 }
 
 const listExpenses = `-- name: ListExpenses :many
 SELECT e.id, e.user_id, m.name AS member_name, e.amount, e.category, e.spent_at,
-       e.comment, e.created_at, e.updated_at
+       e.comment, e.created_at, e.updated_at, e.version
 FROM expenses e JOIN members m ON m.telegram_id = e.user_id
 WHERE ($1::bigint IS NULL OR e.user_id = $1)
   AND ($2::date IS NULL OR e.spent_at >= $2)
@@ -220,6 +224,7 @@ type ListExpensesRow struct {
 	Comment    string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	Version    int64
 }
 
 func (q *Queries) ListExpenses(ctx context.Context, arg ListExpensesParams) ([]ListExpensesRow, error) {
@@ -250,6 +255,7 @@ func (q *Queries) ListExpenses(ctx context.Context, arg ListExpensesParams) ([]L
 			&i.Comment,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -300,25 +306,32 @@ func (q *Queries) SummarizeExpenses(ctx context.Context, arg SummarizeExpensesPa
 const updateExpense = `-- name: UpdateExpense :one
 WITH upd AS (
   UPDATE expenses SET
-    user_id = $1, amount = $2, category = $3,
-    spent_at = $4, comment = $5, updated_at = now()
+    user_id  = COALESCE($1::bigint, user_id),
+    amount   = COALESCE($2::bigint, amount),
+    category = COALESCE($3::text, category),
+    spent_at = COALESCE($4::date, spent_at),
+    comment  = COALESCE($5::text, comment),
+    version  = version + 1,
+    updated_at = now()
   WHERE expenses.id = $6
     AND ($7::bigint IS NULL OR expenses.user_id = $7)
-  RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at
+    AND ($8::bigint IS NULL OR expenses.version = $8)
+  RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at, version
 )
 SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd.spent_at,
-       upd.comment, upd.created_at, upd.updated_at
+       upd.comment, upd.created_at, upd.updated_at, upd.version
 FROM upd JOIN members m ON m.telegram_id = upd.user_id
 `
 
 type UpdateExpenseParams struct {
-	UserID   int64
-	Amount   int64
-	Category string
-	SpentAt  time.Time
-	Comment  string
-	ID       int64
-	OwnerID  *int64
+	UserID          *int64
+	Amount          *int64
+	Category        *string
+	SpentAt         *time.Time
+	Comment         *string
+	ID              int64
+	OwnerID         *int64
+	ExpectedVersion *int64
 }
 
 type UpdateExpenseRow struct {
@@ -331,8 +344,11 @@ type UpdateExpenseRow struct {
 	Comment    string
 	CreatedAt  time.Time
 	UpdatedAt  time.Time
+	Version    int64
 }
 
+// Partial update: NULL args keep the current value. Owner and expected version are checked
+// against the current row in the same statement, so concurrent edits are never lost silently.
 func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (UpdateExpenseRow, error) {
 	row := q.db.QueryRow(ctx, updateExpense,
 		arg.UserID,
@@ -342,6 +358,7 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (U
 		arg.Comment,
 		arg.ID,
 		arg.OwnerID,
+		arg.ExpectedVersion,
 	)
 	var i UpdateExpenseRow
 	err := row.Scan(
@@ -354,6 +371,7 @@ func (q *Queries) UpdateExpense(ctx context.Context, arg UpdateExpenseParams) (U
 		&i.Comment,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Version,
 	)
 	return i, err
 }
