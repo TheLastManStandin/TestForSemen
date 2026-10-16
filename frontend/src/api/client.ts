@@ -46,3 +46,11 @@ export function fieldErrors(err: unknown): Record<string, string> {
 export function isConflict(err: unknown): err is ApiError {
   return err instanceof ApiError && err.status === 409;
 }
+
+const CONFLICT_FALLBACK = "Трата была изменена другим пользователем. Обновите данные и повторите.";
+
+/** Text for the in-dialog conflict alert, or null if err is not a 409. */
+export function conflictMessage(err: unknown): string | null {
+  if (!isConflict(err)) return null;
+  return err.problem?.detail ?? CONFLICT_FALLBACK;
+}

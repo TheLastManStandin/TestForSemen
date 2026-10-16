@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
-import { ApiError, fieldErrors, isConflict, type Expense, type Member } from "@/api/client";
+import { ApiError, conflictMessage, fieldErrors, type Expense, type Member } from "@/api/client";
 import { useCreateExpense, useRefreshExpense, useUpdateExpense } from "@/api/hooks";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -53,6 +53,10 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   // The server state the edit is based on: the opened expense, or a fresh copy loaded after a conflict.
   const [reloaded, setReloaded] = useState<{ source: Expense; fresh: Expense } | null>(null);
   const base = expense && reloaded?.source === expense ? reloaded.fresh : expense;
+  // A 409 is shown inside the dialog: a toast is not clickable while the modal dialog blocks the page.
+  const [conflictState, setConflict] = useState<{ source: Expense; message: string } | null>(null);
+  const conflict = expense && conflictState?.source === expense ? conflictState.message : null;
+  const [reloading, setReloading] = useState(false);
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: initialValues(expense, defaultMemberId) });
   const { errors, isSubmitting } = form.formState;
 
@@ -66,22 +70,22 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
     openRef.current = open;
   }, [open]);
 
-  const conflictToastId = (id: number) => `expense-conflict-${id}`;
-
   const setOpen = (next: boolean) => {
     if (!next) {
       setReloaded(null);
-      if (expense) toast.dismiss(conflictToastId(expense.id));
+      setConflict(null);
     }
     onOpenChange(next);
   };
 
   // Loads the current server version and keeps the user's edits on top of it, so they can review and save again.
   const reloadAfterConflict = async (source: Expense) => {
+    setReloading(true);
     try {
       const fresh = await refreshExpense(source.id);
       if (!openRef.current) return;
       setReloaded({ source, fresh });
+      setConflict(null);
       form.reset(initialValues(fresh, defaultMemberId), { keepDirtyValues: true });
       toast.info("Данные обновлены. Проверьте поля и сохраните ещё раз.");
     } catch (err) {
@@ -90,8 +94,10 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         toast.error("Трату уже удалили.");
         setOpen(false);
       } else {
-        toast.error(err instanceof Error ? err.message : "Не удалось обновить данные");
+        setConflict({ source, message: `Не удалось обновить данные: ${err instanceof Error ? err.message : "ошибка сети"}` });
       }
+    } finally {
+      setReloading(false);
     }
   };
 
@@ -113,13 +119,9 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         }
         setOpen(false);
       } catch (err) {
-        if (expense && isConflict(err)) {
-          const source = expense;
-          toast.error(err.message, {
-            id: conflictToastId(source.id),
-            duration: Infinity,
-            action: { label: "Обновить", onClick: () => void reloadAfterConflict(source) },
-          });
+        const message = conflictMessage(err);
+        if (expense && message) {
+          setConflict({ source: expense, message });
           return;
         }
         const { placed, unplaced } = splitFieldErrors(fieldErrors(err), Object.keys(schema.shape));
@@ -136,6 +138,15 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
           <DialogTitle>{expense ? "Изменить трату" : "Новая трата"}</DialogTitle>
           <DialogDescription>Изменения сразу увидят все члены семьи.</DialogDescription>
         </DialogHeader>
+        {conflict && expense && (
+          <div role="alert" className="grid gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+            <p>{conflict}</p>
+            <p className="text-foreground/80">Ваши правки сохранятся в форме — после обновления проверьте поля и сохраните ещё раз.</p>
+            <Button type="button" variant="outline" size="sm" className="justify-self-start" disabled={reloading} onClick={() => void reloadAfterConflict(expense)}>
+              {reloading ? "Обновляем…" : "Обновить данные"}
+            </Button>
+          </div>
+        )}
         <form id="expense-form" className="grid gap-4" onSubmit={onSubmit} noValidate>
           <div className="grid gap-1.5">
             <Label htmlFor="user_id">Кто потратил</Label>

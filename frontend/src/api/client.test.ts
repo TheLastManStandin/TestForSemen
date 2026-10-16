@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, fieldErrors, isConflict, unwrap } from "./client";
+import { ApiError, conflictMessage, fieldErrors, isConflict, unwrap } from "./client";
 
 function response(status: number): Response {
   return new Response(null, { status });
@@ -37,5 +37,21 @@ describe("isConflict", () => {
     expect(isConflict(new ApiError(409, { title: "Конфликт изменений", status: 409 }))).toBe(true);
     expect(isConflict(new ApiError(422))).toBe(false);
     expect(isConflict(new Error("x"))).toBe(false);
+  });
+});
+
+describe("conflictMessage", () => {
+  it("returns the server detail for a 409", () => {
+    const err = new ApiError(409, { title: "Конфликт изменений", status: 409, detail: "Трата была изменена другим пользователем. Обновите данные и повторите." });
+    expect(conflictMessage(err)).toBe("Трата была изменена другим пользователем. Обновите данные и повторите.");
+  });
+
+  it("falls back to a Russian text when the 409 has no detail", () => {
+    expect(conflictMessage(new ApiError(409))).toMatch(/^Трата была изменена другим пользователем/);
+  });
+
+  it("is null for other errors", () => {
+    expect(conflictMessage(new ApiError(422))).toBeNull();
+    expect(conflictMessage(new Error("x"))).toBeNull();
   });
 });
