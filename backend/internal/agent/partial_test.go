@@ -219,3 +219,23 @@ func TestNextTurnSeesPartialSummary(t *testing.T) {
 	assert.Equal(t, partial.Reply, msgs[4].Content)
 	assert.Len(t, own(t, f.svc, papa), 1)
 }
+
+func TestPartialMixedParallelResultsReportOnlySuccess(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{
+		replies: []llm.ChatResponse{calls(
+			tc("a", "add_expense", `{"amount":"350","category":"food","comment":"кофе"}`),
+			tc("d", "delete_expense", `{"id":999999}`),
+		)},
+		errs: map[int]error{1: errors.New("boom")},
+	})
+	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350 и удали такси"})
+	require.ErrorIs(t, err, agent.ErrPartial)
+	want := partialHeader + "\n• записал: кофе — 350 ₽, еда, 15 октября"
+	assert.Equal(t, want, res.Reply)
+	require.Len(t, res.Changes, 1)
+	assert.Equal(t, agent.ChangeAdd, res.Changes[0].Kind)
+
+	h := history(t, f, papa)
+	assert.Equal(t, []llm.Role{llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleTool, llm.RoleAssistant}, roles(h))
+	assert.Equal(t, want, h[len(h)-1].Content)
+}

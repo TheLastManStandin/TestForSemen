@@ -57,7 +57,7 @@ type Result struct {
 	Reply   string
 	Steps   []domain.TraceStep
 	Usage   llm.Usage
-	Changes []Change // successful add/update/delete calls, in order
+	Changes []Change // successful add/update/delete calls, in order; may be non-empty with a nil error (step limit)
 }
 
 // ErrTooManySteps is recorded in the trace when the loop hits MaxIterations.
