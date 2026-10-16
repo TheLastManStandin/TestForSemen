@@ -3,6 +3,8 @@ package evals
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -69,6 +71,30 @@ func TestRunnerReportsErrorsPerCase(t *testing.T) {
 	assert.Contains(t, results[0].Err, "provider down")
 	assert.False(t, results[0].Passed())
 	assert.True(t, results[1].Passed())
+}
+
+func TestRunnerSeparatesProviderErrors(t *testing.T) {
+	errs := map[string]error{
+		"rate":     &llm.APIError{Status: 429, Message: "rate limited"},
+		"gateway":  &llm.APIError{Status: 502, Message: "bad gateway"},
+		"timeout":  fmt.Errorf("llm request: %w", context.DeadlineExceeded),
+		"conn":     fmt.Errorf("llm request: %w", &url.Error{Op: "Post", URL: "https://x", Err: errors.New("connection reset")}),
+		"badreq":   &llm.APIError{Status: 400, Message: "invalid tool schema"},
+		"internal": errors.New("boom"),
+	}
+	var cases []Case
+	for name := range errs {
+		cases = append(cases, Case{Name: name, Group: "g", Input: name})
+	}
+	fail := llmFunc(func(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, error) {
+		return llm.ChatResponse{}, errs[req.Messages[len(req.Messages)-1].Content]
+	})
+	for _, r := range (&Runner{LLM: fail, Model: "f", Parallel: 2}).Run(context.Background(), cases) {
+		want := r.Case.Name != "badreq" && r.Case.Name != "internal"
+		assert.Equal(t, want, r.ProviderError, r.Case.Name)
+		assert.NotEmpty(t, r.Err, r.Case.Name)
+		assert.False(t, r.Passed(), r.Case.Name)
+	}
 }
 
 type llmFunc func(context.Context, llm.ChatRequest) (llm.ChatResponse, error)

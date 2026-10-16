@@ -3,22 +3,27 @@ package evals
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 )
 
 // GroupStat is the pass count of one case group.
 type GroupStat struct {
-	Group  string
-	Total  int
-	Passed int
+	Group          string
+	Total          int
+	Passed         int
+	ProviderErrors int
 }
 
 // Summary aggregates a run.
 type Summary struct {
 	Model            string
 	Total, Passed    int
+	ProviderErrors   int // cases lost to the provider (429, 5xx, timeouts); not the agent's fault
 	Groups           []GroupStat
 	AvgLatency       time.Duration
 	PromptTokens     int
@@ -26,12 +31,20 @@ type Summary struct {
 	Cost             float64
 }
 
-// PassRate is a percentage.
-func (s Summary) PassRate() float64 {
-	if s.Total == 0 {
+// Functional is the number of cases that produced an outcome attributable to the agent.
+func (s Summary) Functional() int { return s.Total - s.ProviderErrors }
+
+// PassRate is the percentage of functional cases that passed.
+func (s Summary) PassRate() float64 { return percent(s.Passed, s.Functional()) }
+
+// RawPassRate is the percentage of all cases that passed, provider errors included.
+func (s Summary) RawPassRate() float64 { return percent(s.Passed, s.Total) }
+
+func percent(n, of int) float64 {
+	if of == 0 {
 		return 0
 	}
-	return float64(s.Passed) * 100 / float64(s.Total)
+	return float64(n) * 100 / float64(of)
 }
 
 // Summarize aggregates results by group.
@@ -46,9 +59,13 @@ func Summarize(model string, results []Result) Summary {
 			groups[r.Case.Group] = g
 		}
 		g.Total++
-		if r.Passed() {
+		switch {
+		case r.Passed():
 			g.Passed++
 			s.Passed++
+		case r.ProviderError:
+			g.ProviderErrors++
+			s.ProviderErrors++
 		}
 		latency += r.Latency
 		s.PromptTokens += r.Usage.PromptTokens
@@ -65,80 +82,153 @@ func Summarize(model string, results []Result) Summary {
 	return s
 }
 
-// RenderReport renders a Markdown report with every failure explained.
+// RenderReport renders a Markdown report with every failure explained. Provider errors
+// are listed apart from functional failures and excluded from the pass rate.
 func RenderReport(s Summary, results []Result, at time.Time) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "# Evals: `%s`\n\n", s.Model)
 	fmt.Fprintf(&b, "- Дата: %s\n", at.Format("2006-01-02 15:04"))
-	fmt.Fprintf(&b, "- Результат: **%d/%d (%.1f%%)**\n", s.Passed, s.Total, s.PassRate())
+	fmt.Fprintf(&b, "- Результат: **%d/%d (%.1f%%)** без учёта ошибок провайдера; всего %d/%d (%.1f%%)\n",
+		s.Passed, s.Functional(), s.PassRate(), s.Passed, s.Total, s.RawPassRate())
+	fmt.Fprintf(&b, "- Ошибки провайдера: %d\n", s.ProviderErrors)
 	fmt.Fprintf(&b, "- Средняя задержка: %.1f с · токены: %d / %d · стоимость: $%.4f\n\n", s.AvgLatency.Seconds(), s.PromptTokens, s.CompletionTokens, s.Cost)
 
-	b.WriteString("| Группа | Пройдено | % |\n|---|---|---|\n")
+	b.WriteString("| Группа | Пройдено | % | Ошибки провайдера |\n|---|---|---|---|\n")
 	for _, g := range s.Groups {
-		fmt.Fprintf(&b, "| %s | %d/%d | %.1f%% |\n", g.Group, g.Passed, g.Total, float64(g.Passed)*100/float64(g.Total))
+		functional := g.Total - g.ProviderErrors
+		fmt.Fprintf(&b, "| %s | %d/%d | %.1f%% | %d |\n", g.Group, g.Passed, functional, percent(g.Passed, functional), g.ProviderErrors)
 	}
 
-	var failed []Result
+	var failed, provider []Result
 	for _, r := range results {
-		if !r.Passed() {
+		switch {
+		case r.Passed():
+		case r.ProviderError:
+			provider = append(provider, r)
+		default:
 			failed = append(failed, r)
 		}
 	}
-	if len(failed) == 0 {
+	if len(failed) == 0 && len(provider) == 0 {
 		b.WriteString("\nВсе кейсы пройдены.\n")
 		return b.String()
 	}
-	b.WriteString("\n## Провалы\n")
-	for _, r := range failed {
-		fmt.Fprintf(&b, "\n### %s (%s)\n\n", r.Case.Name, r.Case.Group)
-		fmt.Fprintf(&b, "- Ввод: «%s»\n", r.Case.Input)
-		if r.Err != "" {
-			fmt.Fprintf(&b, "- Ошибка: `%s`\n", r.Err)
-			continue
+	if len(failed) > 0 {
+		b.WriteString("\n## Провалы\n")
+		for _, r := range failed {
+			renderFailure(&b, r)
 		}
-		fmt.Fprintf(&b, "- Ответ: «%s»\n", strings.ReplaceAll(r.Reply, "\n", " "))
-		fmt.Fprintf(&b, "- Инструменты: %s\n", strings.Join(r.Tools, ", "))
-		b.WriteString("- Причины:\n")
-		for _, f := range r.Failures {
-			fmt.Fprintf(&b, "  - %s\n", f)
+	}
+	if len(provider) > 0 {
+		b.WriteString("\n## Ошибки провайдера\n\nНе считаются провалами агента; кейсы стоит перезапустить.\n")
+		for _, r := range provider {
+			renderFailure(&b, r)
 		}
 	}
 	return b.String()
 }
 
-const summaryHeader = "# Сравнение моделей\n\nГенерируется `make eval`. Модель по умолчанию — лучшая по проценту прохождения, затем по стоимости и задержке.\n\n| Модель | Пройдено | Задержка | Стоимость прогона |\n|---|---|---|---|\n"
+func renderFailure(b *strings.Builder, r Result) {
+	fmt.Fprintf(b, "\n### %s (%s)\n\n", r.Case.Name, r.Case.Group)
+	fmt.Fprintf(b, "- Ввод: «%s»\n", r.Case.Input)
+	if r.Err != "" {
+		fmt.Fprintf(b, "- Ошибка: `%s`\n", r.Err)
+	} else {
+		fmt.Fprintf(b, "- Ответ: «%s»\n", strings.ReplaceAll(r.Reply, "\n", " "))
+		fmt.Fprintf(b, "- Инструменты: %s\n", strings.Join(r.Tools, ", "))
+		b.WriteString("- Причины:\n")
+		for _, f := range r.Failures {
+			fmt.Fprintf(b, "  - %s\n", f)
+		}
+	}
+	renderSteps(b, r.Steps)
+}
+
+// renderSteps lists the raw tool calls so a failure can be diagnosed from the report alone.
+func renderSteps(b *strings.Builder, steps []domain.TraceStep) {
+	if len(steps) == 0 {
+		return
+	}
+	b.WriteString("- Вызовы:\n")
+	for i, s := range steps {
+		fmt.Fprintf(b, "  %d. `%s` `%s` → `%s`\n", i+1, s.Tool, s.Args, s.Result)
+	}
+}
+
+// RunsDir is the directory (next to README.md) that keeps one dated record per run.
+const RunsDir = "runs"
+
+const summaryHeader = "# Сравнение моделей\n\n" +
+	"Генерируется `make eval`. Модель по умолчанию — лучшая по проценту прохождения, затем по стоимости и задержке.\n" +
+	"«Пройдено» считается без кейсов, упавших на ошибках провайдера (429, 5xx, таймауты); «Всего» — по всем кейсам.\n\n" +
+	"| Модель | Пройдено | Ошибки провайдера | Всего | Задержка | Стоимость прогона | Последний полный прогон |\n" +
+	"|---|---|---|---|---|---|---|\n"
+
+const historyHeader = "\n## История прогонов\n\nКаждый прогон, включая частичные (`-filter`) и повторные, сохраняется в `runs/` и не перезаписывается.\n\n"
 
 // summaryRow is one parsed line of the comparison table.
 type summaryRow struct {
-	model   string
-	line    string
-	rate    float64
-	latency float64
-	cost    float64
+	model               string
+	passed, functional  int
+	total               int
+	providerErrors      int // -1: unknown (row from the old table format)
+	latency, cost, rate float64
+	link                string // relative run record path, "" if none
 }
 
+func (r summaryRow) render() string {
+	provider, link := "—", "—"
+	if r.providerErrors >= 0 {
+		provider = fmt.Sprint(r.providerErrors)
+	}
+	if r.link != "" {
+		link = fmt.Sprintf("[отчёт](%s)", r.link)
+	}
+	return fmt.Sprintf("| `%s` | %.1f%% (%d/%d) | %s | %.1f%% (%d/%d) | %.1f с | $%.4f | %s |",
+		r.model, percent(r.passed, r.functional), r.passed, r.functional, provider,
+		percent(r.passed, r.total), r.passed, r.total, r.latency, r.cost, link)
+}
+
+// parseSummaryRow reads both the current 7-column and the old 4-column table format.
 func parseSummaryRow(line string) (summaryRow, bool) {
 	cells := strings.Split(line, "|")
-	if len(cells) < 6 {
+	for i := range cells {
+		cells[i] = strings.TrimSpace(cells[i])
+	}
+	var latCell, costCell string
+	row := summaryRow{model: strings.Trim(cells[min(1, len(cells)-1)], "`"), providerErrors: -1}
+	switch len(cells) {
+	case 6: // | model | passed | latency | cost |
+		latCell, costCell = cells[3], cells[4]
+	case 9: // | model | passed | provider | total | latency | cost | link |
+		latCell, costCell = cells[5], cells[6]
+		if _, err := fmt.Sscanf(cells[3], "%d", &row.providerErrors); err != nil {
+			row.providerErrors = -1
+		}
+		if i, j := strings.Index(cells[7], "]("), strings.LastIndex(cells[7], ")"); i >= 0 && j > i {
+			row.link = cells[7][i+2 : j]
+		}
+	default:
 		return summaryRow{}, false
 	}
-	row := summaryRow{line: line, model: strings.Trim(strings.TrimSpace(cells[1]), "`")}
-	var passed, total int
-	if _, err := fmt.Sscanf(cells[2][strings.LastIndex(cells[2], "(")+1:], "%d/%d", &passed, &total); err == nil && total > 0 {
-		row.rate = float64(passed) / float64(total)
+	if _, err := fmt.Sscanf(cells[2][strings.LastIndex(cells[2], "(")+1:], "%d/%d", &row.passed, &row.functional); err != nil {
+		return summaryRow{}, false
 	}
-	if _, err := fmt.Sscanf(strings.TrimSpace(cells[3]), "%f", &row.latency); err != nil {
-		row.latency = 0
+	row.total = row.functional
+	if row.providerErrors > 0 {
+		row.total += row.providerErrors
 	}
-	if _, err := fmt.Sscanf(strings.TrimPrefix(strings.TrimSpace(cells[4]), "$"), "%f", &row.cost); err != nil {
-		row.cost = 0
-	}
+	_, _ = fmt.Sscanf(latCell, "%f", &row.latency)
+	_, _ = fmt.Sscanf(strings.TrimPrefix(costCell, "$"), "%f", &row.cost)
+	row.rate = percent(row.passed, row.functional)
 	return row, row.model != ""
 }
 
-// UpdateSummaryFile inserts or replaces the model's row in the comparison table.
-// Rows are sorted by pass rate (desc), then cost (asc), latency (asc) and name.
-func UpdateSummaryFile(path string, s Summary) error {
+// UpdateSummaryFile rewrites the comparison README at path. A full run passes its summary
+// and run record (relative to the README) to insert or replace the model's row; a
+// filtered run passes nil and only refreshes the run history. Rows are sorted by pass
+// rate (desc), then cost (asc), latency (asc) and name.
+func UpdateSummaryFile(path string, s *Summary, run string) error {
 	rows := map[string]summaryRow{}
 	if data, err := os.ReadFile(path); err == nil {
 		for _, line := range strings.Split(string(data), "\n") {
@@ -152,9 +242,11 @@ func UpdateSummaryFile(path string, s Summary) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	line := fmt.Sprintf("| `%s` | %.1f%% (%d/%d) | %.1f с | $%.4f |", s.Model, s.PassRate(), s.Passed, s.Total, s.AvgLatency.Seconds(), s.Cost)
-	if row, ok := parseSummaryRow(line); ok {
-		rows[s.Model] = row
+	if s != nil {
+		rows[s.Model] = summaryRow{
+			model: s.Model, passed: s.Passed, functional: s.Functional(), total: s.Total, providerErrors: s.ProviderErrors,
+			latency: s.AvgLatency.Seconds(), cost: s.Cost, rate: s.PassRate(), link: run,
+		}
 	}
 
 	sorted := make([]summaryRow, 0, len(rows))
@@ -176,9 +268,39 @@ func UpdateSummaryFile(path string, s Summary) error {
 	var b strings.Builder
 	b.WriteString(summaryHeader)
 	for _, r := range sorted {
-		b.WriteString(r.line + "\n")
+		b.WriteString(r.render() + "\n")
+	}
+
+	runs, err := runRecords(filepath.Join(filepath.Dir(path), RunsDir))
+	if err != nil {
+		return err
+	}
+	if len(runs) > 0 {
+		b.WriteString(historyHeader)
+		for _, name := range runs {
+			fmt.Fprintf(&b, "- [%s](%s/%s)\n", name, RunsDir, name)
+		}
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o644)
+}
+
+// runRecords lists run record files, newest first (names start with a timestamp).
+func runRecords(dir string) ([]string, error) {
+	entries, err := os.ReadDir(dir)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".md") {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names)))
+	return names, nil
 }
 
 // Slug turns a model id into a file name.

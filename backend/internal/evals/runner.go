@@ -3,7 +3,10 @@ package evals
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
+	"net"
+	"net/http"
 	"sync"
 	"time"
 
@@ -27,9 +30,13 @@ type Result struct {
 	Failures []string
 	Reply    string
 	Tools    []string
+	Steps    []domain.TraceStep // raw tool calls with args and results
 	Latency  time.Duration
 	Usage    llm.Usage
-	Err      string // infrastructure error (LLM unreachable, etc.)
+	Err      string // run error: the case did not finish
+	// ProviderError marks Err as a provider/infrastructure failure (HTTP 408/429/5xx,
+	// timeout, connection error): it says nothing about the agent and is counted apart.
+	ProviderError bool
 }
 
 // Passed reports whether the case passed.
@@ -81,8 +88,10 @@ func (r *Runner) runCase(ctx context.Context, c Case) Result {
 	out, err := ag.Run(ctx, agent.Input{UserID: User.TelegramID, Text: c.Input, Source: agent.SourceText})
 	res.Latency = time.Since(start)
 	res.Usage = out.Usage
+	res.Steps = out.Steps
 	if err != nil {
 		res.Err = err.Error()
+		res.ProviderError = IsProviderError(err)
 		return res
 	}
 	res.Reply = out.Reply
@@ -92,6 +101,17 @@ func (r *Runner) runCase(ctx context.Context, c Case) Result {
 	diff := ComputeDiff(before, repo.Snapshot())
 	res.Failures = Check(c.Expect, seeded, Outcome{Diff: diff, Reply: out.Reply, Tools: res.Tools}, domain.DateOf(Now))
 	return res
+}
+
+// IsProviderError reports whether err is the LLM provider's or the network's fault
+// rather than the agent's: rate limits, 5xx, timeouts and connection failures.
+func IsProviderError(err error) bool {
+	var apiErr *llm.APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.Status == http.StatusRequestTimeout || apiErr.Status == http.StatusTooManyRequests || apiErr.Status >= 500
+	}
+	var netErr net.Error // includes *url.Error from the HTTP client
+	return errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netErr)
 }
 
 func loadHistory(ctx context.Context, h agent.History, turns []Turn) error {
