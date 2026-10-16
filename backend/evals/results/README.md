@@ -7,16 +7,34 @@
 
 | Модель | Пройдено | Ошибки провайдера | Всего | Задержка | Стоимость прогона | Последний полный прогон |
 |---|---|---|---|---|---|---|
-| `deepseek/deepseek-v4.1-flash` | 100.0% (45/45) | — | 100.0% (45/45) | 1.9 с | $0.0101 | — |
-| `qwen/qwen3.8-omni-flash` | 100.0% (45/45) | — | 100.0% (45/45) | 4.7 с | $0.0143 | — |
-| `anthropic/claude-haiku-5.5` | 100.0% (45/45) | — | 100.0% (45/45) | 2.4 с | $0.0313 | — |
-| `google/gemini-3.8-flash` | 100.0% (45/45) | — | 100.0% (45/45) | 5.8 с | $0.1400 | — |
-| `openai/gpt-6-luna` | 91.1% (41/45) | — | 91.1% (41/45) | 4.3 с | $0.0055 | — |
+| `deepseek/deepseek-v4.1-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 2.3 с | $0.0115 | [отчёт](runs/2026-10-16_14-15-56_deepseek_deepseek-v4.1-flash.md) |
+| `qwen/qwen3.8-omni-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 4.2 с | $0.0132 | [отчёт](runs/2026-10-16_14-17-35_qwen_qwen3.8-omni-flash.md) |
+| `anthropic/claude-haiku-5.5` | 100.0% (45/45) | 0 | 100.0% (45/45) | 3.0 с | $0.0312 | [отчёт](runs/2026-10-16_14-18-11_anthropic_claude-haiku-5.5.md) |
+| `google/gemini-3.8-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 6.2 с | $0.1451 | [отчёт](runs/2026-10-16_14-19-21_google_gemini-3.8-flash.md) |
+| `openai/gpt-6-luna` | 93.3% (42/45) | 0 | 93.3% (42/45) | 4.0 с | $0.0058 | [отчёт](runs/2026-10-16_14-20-12_openai_gpt-6-luna.md) |
 
 ## История прогонов
 
 Каждый прогон, включая частичные (`-filter`) и повторные, сохраняется в `runs/` и не перезаписывается.
 
+- [2026-10-16_14-20-56_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-56_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-52_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-52_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-47_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-47_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-43_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-43_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-39_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-39_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-35_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-35_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-32_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-32_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-28_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-28_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-24_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-24_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-20_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-20-20_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
+- [2026-10-16_14-20-12_openai_gpt-6-luna.md](runs/2026-10-16_14-20-12_openai_gpt-6-luna.md)
+- [2026-10-16_14-19-21_google_gemini-3.8-flash.md](runs/2026-10-16_14-19-21_google_gemini-3.8-flash.md)
+- [2026-10-16_14-18-11_anthropic_claude-haiku-5.5.md](runs/2026-10-16_14-18-11_anthropic_claude-haiku-5.5.md)
+- [2026-10-16_14-17-35_qwen_qwen3.8-omni-flash.md](runs/2026-10-16_14-17-35_qwen_qwen3.8-omni-flash.md)
+- [2026-10-16_14-16-47_qwen_qwen3.8-omni-flash.md](runs/2026-10-16_14-16-47_qwen_qwen3.8-omni-flash.md)
+- [2026-10-16_14-15-56_deepseek_deepseek-v4.1-flash.md](runs/2026-10-16_14-15-56_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-16_14-15-29_deepseek_deepseek-v4.1-flash.md](runs/2026-10-16_14-15-29_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-16_14-15-05_deepseek_deepseek-v4.1-flash.md](runs/2026-10-16_14-15-05_deepseek_deepseek-v4.1-flash.md)
 - [2026-10-16_14-05-46_deepseek_deepseek-v4.1-flash_delete.md](runs/2026-10-16_14-05-46_deepseek_deepseek-v4.1-flash_delete.md)
 - [2026-10-16_14-05-39_deepseek_deepseek-v4.1-flash_update.md](runs/2026-10-16_14-05-39_deepseek_deepseek-v4.1-flash_update.md)
 - [2026-10-16_14-05-30_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md](runs/2026-10-16_14-05-30_deepseek_deepseek-v4.1-flash_update_yesterday_taxi.md)
