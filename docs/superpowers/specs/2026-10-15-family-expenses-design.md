@@ -83,7 +83,7 @@ docs/
 docker-compose.yml
 Makefile
 .env.example
-CLAUDE.md
+AGENTS.md
 README.md
 ```
 
@@ -346,7 +346,7 @@ GitHub Actions на push/PR:
 - **README:** GIF-демо (бот + живая панель), быстрый старт в 3 шага, mermaid-диаграмма, ключевые решения, таблица evals, безопасность, известные ограничения.
 - **`docs/adr/`:** tool calling vs извлечение намерений; периоды вычисляет код; Postgres; деньги в копейках; long polling.
 - **`docs/ai-workflow.md`:** процесс (спека → план → TDD через субагентов → ревью → evals для итераций промпта), где ИИ ошибался и как это ловилось.
-- **`CLAUDE.md`:** конвенции репозитория.
+- **`AGENTS.md`:** конвенции репозитория.
 - **`Makefile`:** `up`, `down`, `test`, `lint`, `gen`, `eval`, `seed`.
 - **Коммиты:** Conventional Commits.
 

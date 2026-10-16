@@ -1,4 +1,4 @@
-# CLAUDE.md
+# AGENTS.md
 
 Family expenses service: Telegram bot with an AI agent + web panel for the head of the family.
 
