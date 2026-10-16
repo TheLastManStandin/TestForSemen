@@ -41,7 +41,7 @@ func reportFileName(model, filter string) string {
 	return evals.Slug(model) + ".md"
 }
 
-// runFileName names a run record: start time, model and the filter, if any.
+// runFileName names a run record: the time the run finished (at), model and the filter, if any.
 func runFileName(model, filter string, at time.Time) string {
 	name := at.Format("2006-01-02_15-04-05") + "_" + evals.Slug(model)
 	if filter != "" {

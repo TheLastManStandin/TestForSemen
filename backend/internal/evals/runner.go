@@ -110,7 +110,10 @@ func IsProviderError(err error) bool {
 	if errors.As(err, &apiErr) {
 		return apiErr.Status == http.StatusRequestTimeout || apiErr.Status == http.StatusTooManyRequests || apiErr.Status >= 500
 	}
-	var netErr net.Error // includes *url.Error from the HTTP client
+	// net.Error includes *url.Error from the HTTP client. It also matches local failures
+	// such as DNS resolution or a bad base URL, so a misconfigured run shows up as
+	// provider errors; every case then fails and the model report is not updated.
+	var netErr net.Error
 	return errors.Is(err, context.DeadlineExceeded) || errors.As(err, &netErr)
 }
 

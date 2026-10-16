@@ -159,8 +159,10 @@ func renderSteps(b *strings.Builder, steps []domain.TraceStep) {
 const RunsDir = "runs"
 
 const summaryHeader = "# Сравнение моделей\n\n" +
-	"Генерируется `make eval`. Модель по умолчанию — лучшая по проценту прохождения, затем по стоимости и задержке.\n" +
-	"«Пройдено» считается без кейсов, упавших на ошибках провайдера (429, 5xx, таймауты); «Всего» — по всем кейсам.\n\n" +
+	"Генерируется `make eval`. Строки отсортированы сначала по проценту от всех кейсов («Всего»), затем по «Пройдено», стоимости и задержке.\n" +
+	"«Пройдено» считается без кейсов, упавших на ошибках провайдера (429, 5xx, таймауты); «Всего» — по всем кейсам.\n" +
+	"Прогон с ошибками провайдера помечен «неполный прогон» и не может быть моделью по умолчанию: ею становится верхняя строка без этой пометки.\n" +
+	"Строки со значением «—» в «Ошибки провайдера» перенесены из старого формата таблицы: их итоги могли включать инфраструктурные ошибки как провалы.\n\n" +
 	"| Модель | Пройдено | Ошибки провайдера | Всего | Задержка | Стоимость прогона | Последний полный прогон |\n" +
 	"|---|---|---|---|---|---|---|\n"
 
@@ -168,18 +170,30 @@ const historyHeader = "\n## История прогонов\n\nКаждый пр
 
 // summaryRow is one parsed line of the comparison table.
 type summaryRow struct {
-	model               string
-	passed, functional  int
-	total               int
-	providerErrors      int // -1: unknown (row from the old table format)
-	latency, cost, rate float64
-	link                string // relative run record path, "" if none
+	model              string
+	passed, functional int
+	total              int
+	providerErrors     int // -1: unknown (row from the old table format)
+	latency, cost      float64
+	link               string // relative run record path, "" if none
 }
+
+// rawRate is the share of all cases that passed; ranking uses it first, so cases lost to
+// the provider cannot lift a model above one that finished every case.
+func (r summaryRow) rawRate() float64 { return percent(r.passed, r.total) }
+
+func (r summaryRow) functionalRate() float64 { return percent(r.passed, r.functional) }
+
+// incomplete marks a run with provider errors: it is shown but never the default choice.
+const incomplete = "неполный прогон"
 
 func (r summaryRow) render() string {
 	provider, link := "—", "—"
 	if r.providerErrors >= 0 {
 		provider = fmt.Sprint(r.providerErrors)
+	}
+	if r.providerErrors > 0 {
+		provider += " (" + incomplete + ")"
 	}
 	if r.link != "" {
 		link = fmt.Sprintf("[отчёт](%s)", r.link)
@@ -220,14 +234,13 @@ func parseSummaryRow(line string) (summaryRow, bool) {
 	}
 	_, _ = fmt.Sscanf(latCell, "%f", &row.latency)
 	_, _ = fmt.Sscanf(strings.TrimPrefix(costCell, "$"), "%f", &row.cost)
-	row.rate = percent(row.passed, row.functional)
 	return row, row.model != ""
 }
 
 // UpdateSummaryFile rewrites the comparison README at path. A full run passes its summary
 // and run record (relative to the README) to insert or replace the model's row; a
-// filtered run passes nil and only refreshes the run history. Rows are sorted by pass
-// rate (desc), then cost (asc), latency (asc) and name.
+// filtered run passes nil and only refreshes the run history. Rows are sorted by raw pass
+// rate (desc), then functional pass rate (desc), cost (asc), latency (asc) and name.
 func UpdateSummaryFile(path string, s *Summary, run string) error {
 	rows := map[string]summaryRow{}
 	if data, err := os.ReadFile(path); err == nil {
@@ -245,7 +258,7 @@ func UpdateSummaryFile(path string, s *Summary, run string) error {
 	if s != nil {
 		rows[s.Model] = summaryRow{
 			model: s.Model, passed: s.Passed, functional: s.Functional(), total: s.Total, providerErrors: s.ProviderErrors,
-			latency: s.AvgLatency.Seconds(), cost: s.Cost, rate: s.PassRate(), link: run,
+			latency: s.AvgLatency.Seconds(), cost: s.Cost, link: run,
 		}
 	}
 
@@ -256,8 +269,10 @@ func UpdateSummaryFile(path string, s *Summary, run string) error {
 	sort.Slice(sorted, func(i, j int) bool {
 		a, b := sorted[i], sorted[j]
 		switch {
-		case a.rate != b.rate:
-			return a.rate > b.rate
+		case a.rawRate() != b.rawRate():
+			return a.rawRate() > b.rawRate()
+		case a.functionalRate() != b.functionalRate():
+			return a.functionalRate() > b.functionalRate()
 		case a.cost != b.cost:
 			return a.cost < b.cost
 		case a.latency != b.latency:

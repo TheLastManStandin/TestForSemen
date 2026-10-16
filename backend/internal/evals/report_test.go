@@ -93,7 +93,7 @@ func TestUpdateSummaryFile(t *testing.T) {
 	require.NoError(t, err)
 	text := string(data)
 	assert.Equal(t, 1, strings.Count(text, "| `m/one` |"), "rows are replaced, not duplicated")
-	assert.Contains(t, text, "| `m/one` | 100.0% (9/9) | 1 | 90.0% (9/10) | 1.0 с | $0.0000 | [отчёт](runs/r3.md) |")
+	assert.Contains(t, text, "| `m/one` | 100.0% (9/9) | 1 (неполный прогон) | 90.0% (9/10) | 1.0 с | $0.0000 | [отчёт](runs/r3.md) |")
 	assert.Contains(t, text, "| `m/two` | 70.0% (7/10) | 0 | 70.0% (7/10) | 2.0 с | $0.0000 | [отчёт](runs/r2.md) |")
 	assert.Less(t, strings.Index(text, "m/one"), strings.Index(text, "m/two"), "sorted by pass rate")
 }
@@ -137,6 +137,34 @@ func TestUpdateSummaryFileListsRunHistory(t *testing.T) {
 	assert.Contains(t, text, "- [2026-10-16_11-30-00_m_one_update.md](runs/2026-10-16_11-30-00_m_one_update.md)")
 	assert.Less(t, strings.Index(text, "11-30-00"), strings.Index(text, "- [2026-10-16_10-00-00"), "newest first")
 	assert.NotContains(t, text, "notes.txt")
+}
+
+func TestUpdateSummaryFileRanksByRawRateAndFlagsIncompleteRuns(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "README.md")
+	// 20/20 functional but 25 cases lost to the provider must not outrank a clean 44/45.
+	require.NoError(t, UpdateSummaryFile(path, &Summary{Model: "m/flaky", Total: 45, Passed: 20, ProviderErrors: 25}, ""))
+	require.NoError(t, UpdateSummaryFile(path, &Summary{Model: "m/clean", Total: 45, Passed: 44, Cost: 1}, ""))
+	// Equal raw rate: the higher functional rate wins, then cost.
+	require.NoError(t, UpdateSummaryFile(path, &Summary{Model: "m/tie-cheap", Total: 10, Passed: 8, Cost: 0.1}, ""))
+	require.NoError(t, UpdateSummaryFile(path, &Summary{Model: "m/tie-func", Total: 10, Passed: 8, ProviderErrors: 1, Cost: 0.5}, ""))
+
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	text := string(data)
+	order := []string{"m/clean", "m/tie-func", "m/tie-cheap", "m/flaky"}
+	for i := 1; i < len(order); i++ {
+		assert.Less(t, strings.Index(text, order[i-1]), strings.Index(text, order[i]), "%s before %s", order[i-1], order[i])
+	}
+	assert.Contains(t, text, "| `m/flaky` | 100.0% (20/20) | 25 (неполный прогон) | 44.4% (20/45) |")
+	assert.Contains(t, text, "| `m/clean` | 97.8% (44/45) | 0 | 97.8% (44/45) |")
+	assert.Contains(t, text, "сначала по проценту от всех кейсов")
+	assert.Contains(t, text, "не может быть моделью по умолчанию")
+
+	// The flag and provider count survive a rewrite.
+	require.NoError(t, UpdateSummaryFile(path, nil, ""))
+	again, err := os.ReadFile(path)
+	require.NoError(t, err)
+	assert.Equal(t, text, string(again))
 }
 
 func TestUpdateSummaryFileTieBreak(t *testing.T) {
