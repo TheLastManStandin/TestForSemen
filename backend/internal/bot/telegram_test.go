@@ -128,3 +128,32 @@ func TestToIncomingCarriesChatType(t *testing.T) {
 		assert.Equal(t, string(ct), in.ChatType)
 	}
 }
+
+func TestToIncomingPinsHandledUpdateKinds(t *testing.T) {
+	msg := &models.Message{Chat: models.Chat{ID: 10, Type: models.ChatTypePrivate}, From: &models.User{ID: 111}, Text: "x"}
+	dropped := map[string]*models.Update{
+		"edited_message":          {EditedMessage: msg},
+		"channel_post":            {ChannelPost: msg},
+		"edited_channel_post":     {EditedChannelPost: msg},
+		"business_message":        {BusinessMessage: msg},
+		"edited_business_message": {EditedBusinessMessage: msg},
+		"callback_query":          {CallbackQuery: &models.CallbackQuery{From: models.User{ID: 111}}},
+		"inline_query":            {InlineQuery: &models.InlineQuery{From: &models.User{ID: 111}}},
+	}
+	for name, u := range dropped {
+		t.Run(name, func(t *testing.T) {
+			_, ok := toIncoming(u)
+			assert.False(t, ok)
+		})
+	}
+
+	t.Run("forwarded message uses the forwarder as user", func(t *testing.T) {
+		fwd := &models.Message{
+			Chat: models.Chat{ID: 10, Type: models.ChatTypePrivate}, From: &models.User{ID: 111}, Text: "x",
+			ForwardOrigin: &models.MessageOrigin{Type: models.MessageOriginTypeUser, MessageOriginUser: &models.MessageOriginUser{SenderUser: models.User{ID: 222}}},
+		}
+		in, ok := toIncoming(&models.Update{Message: fwd})
+		assert.True(t, ok)
+		assert.Equal(t, int64(111), in.UserID)
+	})
+}
