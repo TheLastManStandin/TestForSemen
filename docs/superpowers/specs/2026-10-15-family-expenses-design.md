@@ -44,7 +44,8 @@ docker compose:
 flowchart LR
   TG[Telegram] -- long polling --> BOT[bot]
   BOT -- voice --> STT[stt: OpenRouter transcriptions]
-  BOT --> AGENT[agent: tool-calling loop]
+  STT -- transcript --> BOT
+  BOT -- text / transcript --> AGENT[agent: tool-calling loop]
   AGENT -- chat completions --> LLM[llm: OpenRouter]
   AGENT -- tools --> SVC[expense.Service]
   WEB[React panel] -- REST / SSE --> HTTP[httpapi]

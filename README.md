@@ -45,8 +45,9 @@
 ```mermaid
 flowchart LR
   TG[Telegram] -- long polling --> BOT[bot]
-  BOT -- голосовые --> STT[OpenRouter STT]
-  BOT --> AGENT[agent: цикл tool calling]
+  BOT -- голосовое, ogg --> STT[OpenRouter STT]
+  STT -- текст расшифровки --> BOT
+  BOT -- текст или расшифровка голосового --> AGENT[agent: цикл tool calling]
   AGENT -- chat completions --> LLM[OpenRouter]
   AGENT -- 5 инструментов, только свои траты --> SVC[expense.Service]
   WEB[React-панель] -- REST + SSE --> HTTP[httpapi]
