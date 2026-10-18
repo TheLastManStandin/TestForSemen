@@ -169,14 +169,15 @@ func (r *Repo) Update(_ context.Context, id int64, p expense.Patch, owner *int64
 	return e, nil
 }
 
-func (r *Repo) Delete(_ context.Context, id int64, owner *int64) error {
+func (r *Repo) Delete(_ context.Context, id int64, owner *int64) (domain.Expense, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if cur, ok := r.items[id]; !ok || (owner != nil && cur.UserID != *owner) {
-		return domain.ErrNotFound
+	cur, ok := r.items[id]
+	if !ok || (owner != nil && cur.UserID != *owner) {
+		return domain.Expense{}, domain.ErrNotFound
 	}
 	delete(r.items, id)
-	return nil
+	return cur, nil
 }
 
 func (r *Repo) Aggregate(_ context.Context, q expense.AggQuery) ([]expense.AggRow, error) {

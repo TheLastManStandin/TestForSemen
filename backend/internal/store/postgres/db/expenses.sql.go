@@ -69,10 +69,16 @@ func (q *Queries) AggregateExpenses(ctx context.Context, arg AggregateExpensesPa
 	return items, nil
 }
 
-const deleteExpense = `-- name: DeleteExpense :execrows
-DELETE FROM expenses
-WHERE id = $1
-  AND ($2::bigint IS NULL OR user_id = $2)
+const deleteExpense = `-- name: DeleteExpense :one
+WITH del AS (
+  DELETE FROM expenses
+  WHERE expenses.id = $1
+    AND ($2::bigint IS NULL OR expenses.user_id = $2)
+  RETURNING id, user_id, amount, category, spent_at, comment, created_at, updated_at, version
+)
+SELECT del.id, del.user_id, m.name AS member_name, del.amount, del.category, del.spent_at,
+       del.comment, del.created_at, del.updated_at, del.version
+FROM del JOIN members m ON m.telegram_id = del.user_id
 `
 
 type DeleteExpenseParams struct {
@@ -80,12 +86,36 @@ type DeleteExpenseParams struct {
 	OwnerID *int64
 }
 
-func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteExpense, arg.ID, arg.OwnerID)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
+type DeleteExpenseRow struct {
+	ID         int64
+	UserID     int64
+	MemberName string
+	Amount     int64
+	Category   string
+	SpentAt    time.Time
+	Comment    string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+	Version    int64
+}
+
+// Returns the row as it was deleted, so a concurrent edit is never reported as the old version.
+func (q *Queries) DeleteExpense(ctx context.Context, arg DeleteExpenseParams) (DeleteExpenseRow, error) {
+	row := q.db.QueryRow(ctx, deleteExpense, arg.ID, arg.OwnerID)
+	var i DeleteExpenseRow
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.MemberName,
+		&i.Amount,
+		&i.Category,
+		&i.SpentAt,
+		&i.Comment,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Version,
+	)
+	return i, err
 }
 
 const getExpense = `-- name: GetExpense :one

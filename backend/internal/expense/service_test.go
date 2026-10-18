@@ -213,3 +213,32 @@ func TestDelete(t *testing.T) {
 	assert.ErrorIs(t, err, domain.ErrNotFound)
 	assert.Equal(t, []events.Type{events.ExpenseCreated, events.ExpenseDeleted}, rec.types())
 }
+
+// editBeforeDeleteRepo applies a concurrent edit right before every delete,
+// as if another client saved between the service's decision and the write.
+type editBeforeDeleteRepo struct {
+	*memrepo.Repo
+	edit expense.Patch
+}
+
+func (r *editBeforeDeleteRepo) Delete(ctx context.Context, id int64, owner *int64) (domain.Expense, error) {
+	if _, err := r.Repo.Update(ctx, id, r.edit, nil); err != nil {
+		return domain.Expense{}, err
+	}
+	return r.Repo.Delete(ctx, id, owner)
+}
+
+func TestDeleteReportsTheRowActuallyDeleted(t *testing.T) {
+	repo := &editBeforeDeleteRepo{Repo: memrepo.New(), edit: expense.Patch{Amount: new(domain.Money(20000))}}
+	require.NoError(t, repo.UpsertMembers(ctx, []domain.Member{expensetest.Papa, expensetest.Mama}))
+	rec := &recorder{}
+	svc := expense.NewService(repo, rec, time.UTC, func() time.Time { return fixedNow })
+	e := mustCreate(t, svc, papa, 10000, domain.CategoryFood, "2026-10-14", "обед")
+
+	deleted, err := svc.Delete(ctx, expense.Own(papa), e.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.Money(20000), deleted.Amount)
+	assert.Equal(t, e.Version+1, deleted.Version)
+	require.Len(t, rec.events, 2)
+	assert.Equal(t, deleted, rec.events[1].Expense, "the event carries the deleted version")
+}

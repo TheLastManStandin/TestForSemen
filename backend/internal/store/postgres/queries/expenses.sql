@@ -59,10 +59,17 @@ SELECT upd.id, upd.user_id, m.name AS member_name, upd.amount, upd.category, upd
        upd.comment, upd.created_at, upd.updated_at, upd.version
 FROM upd JOIN members m ON m.telegram_id = upd.user_id;
 
--- name: DeleteExpense :execrows
-DELETE FROM expenses
-WHERE id = sqlc.arg(id)
-  AND (sqlc.narg(owner_id)::bigint IS NULL OR user_id = sqlc.narg(owner_id));
+-- name: DeleteExpense :one
+-- Returns the row as it was deleted, so a concurrent edit is never reported as the old version.
+WITH del AS (
+  DELETE FROM expenses
+  WHERE expenses.id = sqlc.arg(id)
+    AND (sqlc.narg(owner_id)::bigint IS NULL OR expenses.user_id = sqlc.narg(owner_id))
+  RETURNING *
+)
+SELECT del.id, del.user_id, m.name AS member_name, del.amount, del.category, del.spent_at,
+       del.comment, del.created_at, del.updated_at, del.version
+FROM del JOIN members m ON m.telegram_id = del.user_id;
 
 -- name: AggregateExpenses :many
 SELECT e.spent_at, e.user_id, m.name AS member_name, e.category,

@@ -277,10 +277,16 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		r := setup(t)
 		e := insert(t, r, Papa.TelegramID, 100, domain.CategoryOther, "2026-10-10", "")
 
-		require.NoError(t, r.Delete(ctx, e.ID, nil))
-		_, err := r.Get(ctx, e.ID, nil)
+		cur, err := r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(200))}, nil)
+		require.NoError(t, err)
+
+		deleted, err := r.Delete(ctx, e.ID, nil)
+		require.NoError(t, err)
+		assert.Equal(t, cur, deleted, "returns the row as it was deleted")
+		_, err = r.Get(ctx, e.ID, nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		assert.ErrorIs(t, r.Delete(ctx, e.ID, nil), domain.ErrNotFound)
+		_, err = r.Delete(ctx, e.ID, nil)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})
 
 	t.Run("update and delete respect owner", func(t *testing.T) {
@@ -292,7 +298,8 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 		_, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("чужое"), Version: ptr(int64(7))}, &mama)
 		assert.ErrorIs(t, err, domain.ErrNotFound, "a foreign row is not found, not a conflict")
-		assert.ErrorIs(t, r.Delete(ctx, e.ID, &mama), domain.ErrNotFound)
+		_, err = r.Delete(ctx, e.ID, &mama)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
 
 		got, err := r.Get(ctx, e.ID, nil)
 		require.NoError(t, err)
@@ -310,8 +317,10 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		// now it belongs to mama: papa can no longer touch it
 		_, err = r.Update(ctx, e.ID, expense.Patch{Comment: ptr("моё")}, &papa)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
-		assert.ErrorIs(t, r.Delete(ctx, e.ID, &papa), domain.ErrNotFound)
-		require.NoError(t, r.Delete(ctx, e.ID, &mama))
+		_, err = r.Delete(ctx, e.ID, &papa)
+		assert.ErrorIs(t, err, domain.ErrNotFound)
+		_, err = r.Delete(ctx, e.ID, &mama)
+		require.NoError(t, err)
 		_, err = r.Get(ctx, e.ID, nil)
 		assert.ErrorIs(t, err, domain.ErrNotFound)
 	})

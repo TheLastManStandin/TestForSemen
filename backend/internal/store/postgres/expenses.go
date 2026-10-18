@@ -91,15 +91,15 @@ func (s *Store) Update(ctx context.Context, id int64, p expense.Patch, owner *in
 	return fromRow(db.GetExpenseRow(row)), nil
 }
 
-func (s *Store) Delete(ctx context.Context, id int64, owner *int64) error {
-	n, err := s.q.DeleteExpense(ctx, db.DeleteExpenseParams{ID: id, OwnerID: owner})
+func (s *Store) Delete(ctx context.Context, id int64, owner *int64) (domain.Expense, error) {
+	row, err := s.q.DeleteExpense(ctx, db.DeleteExpenseParams{ID: id, OwnerID: owner})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return domain.Expense{}, domain.ErrNotFound
+	}
 	if err != nil {
-		return fmt.Errorf("delete expense: %w", err)
+		return domain.Expense{}, fmt.Errorf("delete expense: %w", err)
 	}
-	if n == 0 {
-		return domain.ErrNotFound
-	}
-	return nil
+	return fromRow(db.GetExpenseRow(row)), nil
 }
 
 func (s *Store) Aggregate(ctx context.Context, q expense.AggQuery) ([]expense.AggRow, error) {

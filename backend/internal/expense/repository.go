@@ -60,8 +60,9 @@ type Repository interface {
 	// else; domain.ErrConflict if p.Version != nil and differs from the stored version.
 	// Nothing is written when an error is returned. Service never passes a patch without fields.
 	Update(ctx context.Context, id int64, p Patch, owner *int64) (domain.Expense, error)
-	// Delete returns domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone else.
-	Delete(ctx context.Context, id int64, owner *int64) error
+	// Delete removes the expense in one atomic write and returns the row as it was deleted.
+	// It returns domain.ErrNotFound if the expense is missing or owner != nil and it belongs to someone else.
+	Delete(ctx context.Context, id int64, owner *int64) (domain.Expense, error)
 	// Aggregate groups by (date, user, category) and orders rows the same way.
 	Aggregate(ctx context.Context, q AggQuery) ([]AggRow, error)
 }

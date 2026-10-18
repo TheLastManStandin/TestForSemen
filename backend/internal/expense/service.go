@@ -214,13 +214,10 @@ func apply(e domain.Expense, p Patch) domain.Expense {
 	return e
 }
 
-// Delete removes an expense and returns what was deleted.
+// Delete removes an expense and returns the version that was actually deleted.
 func (s *Service) Delete(ctx context.Context, scope Scope, id int64) (domain.Expense, error) {
-	e, err := s.repo.Get(ctx, id, scope.UserID)
+	e, err := s.repo.Delete(ctx, id, scope.UserID)
 	if err != nil {
-		return domain.Expense{}, err
-	}
-	if err := s.repo.Delete(ctx, id, scope.UserID); err != nil {
 		return domain.Expense{}, err
 	}
 	s.pub.Publish(events.Event{Type: events.ExpenseDeleted, Expense: e})
