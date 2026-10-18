@@ -14,6 +14,13 @@ import (
 // to send to the member instead of a generic error.
 var ErrPartial = errors.New("agent: turn failed after completed changes")
 
+// ErrEmptyReply is recorded in the trace when the model ends a turn that changed nothing
+// without a reply. Run does not return it: the member still gets a reply.
+var ErrEmptyReply = errors.New("agent: empty model reply")
+
+// ReplyNotUnderstood is sent when the model ends a turn with neither changes nor a reply.
+const ReplyNotUnderstood = "Не понял запрос, попробуй сформулировать иначе"
+
 // ChangeKind is the kind of a completed data change.
 type ChangeKind string
 
@@ -49,28 +56,57 @@ type changeResult struct {
 
 func (r changeResult) MarshalJSON() ([]byte, error) { return json.Marshal(r.payload) }
 
-// summarizeChanges renders completed changes in Russian from the structured tool results,
-// one line per change and without deduplication (two identical purchases are legitimate).
+// summarizeChanges closes a turn that failed after changing data.
 func summarizeChanges(changes []Change, today time.Time) string {
-	var b strings.Builder
-	b.WriteString(replyPartialHeader)
+	return replyPartialHeader + "\n" + confirmChanges(changes, today)
+}
+
+// confirmChanges renders completed changes in Russian from the structured tool results,
+// one line per change and without deduplication (two identical purchases are legitimate).
+func confirmChanges(changes []Change, today time.Time) string {
+	lines := make([]string, 0, len(changes))
 	for _, c := range changes {
-		b.WriteString("\n• ")
 		switch c.Kind {
 		case ChangeAdd:
-			b.WriteString("записал: " + describeExpense(c.Expense, today))
+			lines = append(lines, "Записал: "+describeExpense(c.Expense, today))
 		case ChangeUpdate:
-			b.WriteString("изменил: " + describeExpense(c.Expense, today))
+			line := "Изменил: " + describeExpense(c.Expense, today)
 			if c.Before != nil {
 				if was := changedFrom(*c.Before, c.Expense, c.Patched, today); was != "" {
-					b.WriteString(" (было " + was + ")")
+					line += " (было " + was + ")"
 				}
 			}
+			lines = append(lines, line)
 		case ChangeDelete:
-			b.WriteString("удалил: " + describeExpense(c.Expense, today))
+			lines = append(lines, "Удалил: "+describeExpense(c.Expense, today))
 		}
 	}
-	return b.String()
+	return strings.Join(lines, "\n")
+}
+
+// composeReply builds the member's reply for a turn the model finished. Changes are confirmed
+// from the tool results, never from the model's wording; the model's text follows as the answer
+// to the rest of the message. failure is the user-facing reason the last tool batch failed, if it did.
+// ErrEmptyReply means the model ended the turn without changing anything or saying anything.
+func composeReply(modelText string, changes []Change, failure string, today time.Time) (string, error) {
+	var parts []string
+	if len(changes) > 0 {
+		parts = append(parts, confirmChanges(changes, today))
+	}
+	switch modelText = strings.TrimSpace(modelText); {
+	case modelText != "":
+		parts = append(parts, modelText)
+	case failure != "":
+		parts = append(parts, "Не получилось: "+failure+".")
+	}
+	reply := strings.Join(parts, "\n\n")
+	if len(changes) == 0 && modelText == "" {
+		if reply == "" {
+			reply = ReplyNotUnderstood
+		}
+		return reply, ErrEmptyReply
+	}
+	return reply, nil
 }
 
 // describeExpense renders "кофе — 350 ₽, еда, 16 октября".

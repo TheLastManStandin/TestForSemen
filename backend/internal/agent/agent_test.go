@@ -100,12 +100,12 @@ func own(t *testing.T, svc *expense.Service, user int64) []domain.Expense {
 func TestRunAddsExpenseAndReplies(t *testing.T) {
 	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
 		calls(tc("c1", "add_expense", `{"amount":"350","category":"food","comment":"кофе"}`)),
-		text("Записал: кофе — 350 ₽, еда, сегодня"),
+		text(""),
 	}})
 
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350"})
 	require.NoError(t, err)
-	assert.Equal(t, "Записал: кофе — 350 ₽, еда, сегодня", res.Reply)
+	assert.Equal(t, "Записал: кофе — 350 ₽, еда, 15 октября", res.Reply)
 	require.Len(t, res.Steps, 1)
 	assert.Equal(t, "add_expense", res.Steps[0].Tool)
 	assert.Len(t, own(t, f.svc, papa), 1)
@@ -311,7 +311,7 @@ func TestRunLLMErrorAfterToolStepClosesTurn(t *testing.T) {
 		last = m
 	}
 	assert.Equal(t, []llm.Role{llm.RoleUser, llm.RoleAssistant, llm.RoleTool, llm.RoleAssistant}, roles)
-	assert.Equal(t, "Не удалось закончить ответ, но действия выполнены:\n• записал: кофе — 350 ₽, еда, 15 октября", last.Content)
+	assert.Equal(t, "Не удалось закончить ответ, но действия выполнены:\nЗаписал: кофе — 350 ₽, еда, 15 октября", last.Content)
 	assert.Contains(t, f.mem.Traces()[0].Error, "boom")
 }
 
@@ -337,7 +337,7 @@ func (m *schemaOrderLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatR
 	}
 	switch {
 	case res.Updated != nil:
-		return text("Исправил: такси — 1 300 ₽"), nil
+		return text(""), nil
 	case res.Error != "":
 		return calls(tc("u", "update_expense", m.args)), nil
 	}
@@ -396,7 +396,7 @@ func TestRunUpdatesAmountWhenModelFillsArgsInSchemaOrder(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, fmt.Sprintf(`{"id":%d,"amount":"1300"}`, taxi.ID), m.args)
-	assert.Equal(t, "Исправил: такси — 1 300 ₽", out.Reply)
+	assert.Equal(t, "Изменил: такси — 1 300 ₽, транспорт, 14 октября (было 1 200 ₽)", out.Reply)
 	items := own(t, f.svc, papa)
 	require.Len(t, items, 1)
 	assert.Equal(t, domain.Money(130_000), items[0].Amount)

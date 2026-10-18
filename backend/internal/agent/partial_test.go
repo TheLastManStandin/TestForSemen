@@ -59,7 +59,7 @@ func TestPartialAddThenLLMFails(t *testing.T) {
 	assert.ErrorIs(t, err, agent.ErrPartial)
 	assert.Contains(t, err.Error(), "boom", "the real cause is kept")
 
-	want := partialHeader + "\n• записал: кофе — 350 ₽, еда, 15 октября"
+	want := partialHeader + "\nЗаписал: кофе — 350 ₽, еда, 15 октября"
 	assert.Equal(t, want, res.Reply)
 	require.Len(t, res.Changes, 1)
 	assert.Equal(t, agent.ChangeAdd, res.Changes[0].Kind)
@@ -84,7 +84,7 @@ func TestPartialUpdateThenLLMFails(t *testing.T) {
 
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "такси было 1300"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	assert.Equal(t, partialHeader+"\n• изменил: такси — 1 300 ₽, транспорт, 14 октября (было 1 200 ₽)", res.Reply)
+	assert.Equal(t, partialHeader+"\nИзменил: такси — 1 300 ₽, транспорт, 14 октября (было 1 200 ₽)", res.Reply)
 	require.Len(t, res.Changes, 1)
 	assert.Equal(t, agent.ChangeUpdate, res.Changes[0].Kind)
 	require.NotNil(t, res.Changes[0].Before)
@@ -101,7 +101,7 @@ func TestPartialUpdateListsEveryChangedField(t *testing.T) {
 
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "поправь такси"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	assert.Equal(t, partialHeader+"\n• изменил: такси домой — 1 200 ₽, другое, 13 октября (было такси, транспорт, 14 октября)", res.Reply)
+	assert.Equal(t, partialHeader+"\nИзменил: такси домой — 1 200 ₽, другое, 13 октября (было такси, транспорт, 14 октября)", res.Reply)
 }
 
 func TestPartialDeleteThenLLMFails(t *testing.T) {
@@ -112,7 +112,7 @@ func TestPartialDeleteThenLLMFails(t *testing.T) {
 
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "удали такси"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	assert.Equal(t, partialHeader+"\n• удалил: такси — 1 200 ₽, транспорт, 14 октября", res.Reply)
+	assert.Equal(t, partialHeader+"\nУдалил: такси — 1 200 ₽, транспорт, 14 октября", res.Reply)
 	assert.Empty(t, own(t, f.svc, papa))
 	require.Len(t, res.Changes, 1)
 	assert.Equal(t, agent.ChangeDelete, res.Changes[0].Kind)
@@ -126,7 +126,7 @@ func TestPartialIdenticalAddsAreAllReported(t *testing.T) {
 	})
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "два кофе по 350"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	line := "\n• записал: кофе — 350 ₽, еда, 15 октября"
+	line := "\nЗаписал: кофе — 350 ₽, еда, 15 октября"
 	assert.Equal(t, partialHeader+line+line, res.Reply)
 	assert.Len(t, own(t, f.svc, papa), 2)
 }
@@ -188,7 +188,7 @@ func TestStepLimitAfterAddReportsSummary(t *testing.T) {
 
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350"})
 	require.NoError(t, err, "step limit is a polite reply, not an infrastructure error")
-	want := partialHeader + "\n• записал: кофе — 350 ₽, еда, 15 октября"
+	want := partialHeader + "\nЗаписал: кофе — 350 ₽, еда, 15 октября"
 	assert.Equal(t, want, res.Reply)
 	assert.NotContains(t, res.Reply, agent.ReplyTooManySteps)
 
@@ -230,7 +230,7 @@ func TestPartialMixedParallelResultsReportOnlySuccess(t *testing.T) {
 	})
 	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350 и удали такси"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	want := partialHeader + "\n• записал: кофе — 350 ₽, еда, 15 октября"
+	want := partialHeader + "\nЗаписал: кофе — 350 ₽, еда, 15 октября"
 	assert.Equal(t, want, res.Reply)
 	require.Len(t, res.Changes, 1)
 	assert.Equal(t, agent.ChangeAdd, res.Changes[0].Kind)

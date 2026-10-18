@@ -60,6 +60,6 @@ func TestPartialUpdateAttributesOnlyPatchedFields(t *testing.T) {
 
 	res, err := a.Run(ctx, agent.Input{UserID: papa, Text: "такси было 1300"})
 	require.ErrorIs(t, err, agent.ErrPartial)
-	assert.Equal(t, partialHeader+"\n• изменил: такси домой — 1 300 ₽, транспорт, 14 октября (было 1 200 ₽)", res.Reply,
+	assert.Equal(t, partialHeader+"\nИзменил: такси домой — 1 300 ₽, транспорт, 14 октября (было 1 200 ₽)", res.Reply,
 		"the concurrent comment edit is not attributed to the bot")
 }

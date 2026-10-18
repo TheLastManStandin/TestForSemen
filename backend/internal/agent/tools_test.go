@@ -41,7 +41,9 @@ func newToolAgent(t *testing.T) (*Agent, *expense.Service) {
 
 func call(t *testing.T, a *Agent, user int64, name, args string) map[string]any {
 	t.Helper()
-	out, step, change := a.execute(tctx, user, llm.ToolCall{ID: "c", Type: "function", Function: llm.FunctionCall{Name: name, Arguments: args}})
+	o := a.execute(tctx, user, llm.ToolCall{ID: "c", Type: "function", Function: llm.FunctionCall{Name: name, Arguments: args}})
+	out, step, change := o.content, o.step, o.change
+	assert.Equal(t, o.failure != "", strings.Contains(out, `"error"`), "a failure reason is set exactly for failed calls: %s", out)
 	assert.Equal(t, name, step.Tool)
 	assert.True(t, json.Valid(step.Args), "trace args must be valid JSON")
 	assert.JSONEq(t, out, string(step.Result))

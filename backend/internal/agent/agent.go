@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"time"
 
@@ -66,8 +65,6 @@ var ErrTooManySteps = errors.New("agent: too many tool iterations")
 // ReplyTooManySteps is sent to the member when the loop gives up.
 const ReplyTooManySteps = "Не получилось разобраться с запросом, попробуй сформулировать иначе"
 
-const replyEmpty = "Готово."
-
 // Agent is safe for concurrent use; runs for the same member are serialized.
 type Agent struct {
 	llm     llm.Client
@@ -97,10 +94,11 @@ func New(client llm.Client, svc *expense.Service, history History, traces TraceS
 }
 
 // Run handles one message. The error is non-nil only for infrastructure failures;
-// a trace is saved in every case. If the failure came after the turn had already changed
-// data, the error wraps ErrPartial and Result.Reply is a factual summary of the changes
-// for the member. Hitting the step limit is not an error: Reply is then ReplyTooManySteps,
-// or the summary of changes if there were any.
+// a trace is saved in every case. Changes are confirmed in Result.Reply from the tool
+// results, not from the model's wording. If the failure came after the turn had already
+// changed data, the error wraps ErrPartial and Result.Reply is a factual summary of the
+// changes for the member. Hitting the step limit or an empty model reply is not an error:
+// Reply is then a polite fallback, or the summary of changes if there were any.
 func (a *Agent) Run(ctx context.Context, in Input) (Result, error) {
 	if in.Source == "" {
 		in.Source = SourceText
@@ -123,7 +121,7 @@ func (a *Agent) Run(ctx context.Context, in Input) (Result, error) {
 	if saveErr := a.traces.SaveTrace(context.WithoutCancel(ctx), trace); saveErr != nil {
 		a.log.ErrorContext(ctx, "save trace", "err", saveErr)
 	}
-	if errors.Is(err, ErrTooManySteps) {
+	if errors.Is(err, ErrTooManySteps) || errors.Is(err, ErrEmptyReply) {
 		return res, nil
 	}
 	return res, err
@@ -144,8 +142,9 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 	turn := []llm.Message{user}
 
 	var res Result
+	var failure string // why the latest tool batch failed, for the reply
 	temperature := a.cfg.Temperature
-	for range a.cfg.MaxIterations {
+	for iter := range a.cfg.MaxIterations {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{Model: a.cfg.Model, Messages: msgs, Tools: toolDefs, Temperature: &temperature})
 		if err != nil {
 			err = fmt.Errorf("llm: %w", err)
@@ -162,24 +161,28 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 
 		reply := resp.Message
 		reply.Role = llm.RoleAssistant
+		reply.ToolCalls = uniqueCalls(reply.ToolCalls, iter)
 		msgs = append(msgs, reply)
 		turn = append(turn, reply)
 
 		if len(reply.ToolCalls) == 0 {
-			res.Reply = strings.TrimSpace(reply.Content)
-			if res.Reply == "" {
-				res.Reply = replyEmpty
-			}
+			res.Reply, err = composeReply(reply.Content, res.Changes, failure, a.svc.Today())
+			// History keeps what the member saw, so the next turn knows what was confirmed.
+			turn[len(turn)-1].Content = res.Reply
 			a.saveTurn(ctx, in.UserID, turn)
-			return res, nil
+			return res, err
 		}
+		failure = ""
 		for _, call := range reply.ToolCalls {
-			out, step, change := a.execute(ctx, in.UserID, call)
-			res.Steps = append(res.Steps, step)
-			if change != nil {
-				res.Changes = append(res.Changes, *change)
+			o := a.execute(ctx, in.UserID, call)
+			res.Steps = append(res.Steps, o.step)
+			if o.change != nil {
+				res.Changes = append(res.Changes, *o.change)
 			}
-			toolMsg := llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: out}
+			if o.failure != "" {
+				failure = o.failure
+			}
+			toolMsg := llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: o.content}
 			msgs = append(msgs, toolMsg)
 			turn = append(turn, toolMsg)
 		}
@@ -233,4 +236,23 @@ func (a *Agent) saveTurn(ctx context.Context, userID int64, turn []llm.Message) 
 func (a *Agent) userLock(userID int64) *sync.Mutex {
 	v, _ := a.locks.LoadOrStore(userID, &sync.Mutex{})
 	return v.(*sync.Mutex)
+}
+
+// uniqueCalls drops a repeated tool call id within one response, so a duplicated call is
+// executed once and every call keeps exactly one result. Ids are compared only within a
+// response: some providers number calls per response. Missing ids are filled in.
+func uniqueCalls(calls []llm.ToolCall, iter int) []llm.ToolCall {
+	seen := make(map[string]bool, len(calls))
+	out := calls[:0:0]
+	for i, c := range calls {
+		if c.ID == "" {
+			c.ID = fmt.Sprintf("call_%d_%d", iter, i)
+		}
+		if seen[c.ID] {
+			continue
+		}
+		seen[c.ID] = true
+		out = append(out, c)
+	}
+	return out
 }

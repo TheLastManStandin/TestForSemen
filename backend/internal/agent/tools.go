@@ -126,21 +126,29 @@ func (ps props) MarshalJSON() ([]byte, error) {
 	return b.Bytes(), nil
 }
 
-// execute runs one tool call and returns the tool message content, a trace step and,
-// for a successful add/update/delete, the change it made.
-func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) (string, domain.TraceStep, *Change) {
+// toolOutcome is the result of one executed tool call.
+type toolOutcome struct {
+	content string // tool message content for the model
+	step    domain.TraceStep
+	change  *Change // the change a successful add/update/delete made
+	failure string  // user-facing reason when the call failed
+}
+
+// execute runs one tool call.
+func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) toolOutcome {
 	start := time.Now()
 	out, err := a.dispatch(ctx, userID, call.Function.Name, []byte(call.Function.Arguments))
 	result := out
-	var change *Change
+	var o toolOutcome
 	if cr, ok := out.(changeResult); ok && err == nil {
-		change = &cr.change
+		o.change = &cr.change
 	}
 	if err != nil {
 		if isInternal(err) {
 			a.log.ErrorContext(ctx, "agent tool failed", "tool", call.Function.Name, "user_id", userID, "err", err)
 		}
 		result = map[string]string{"error": toolError(err)}
+		o.failure = failureReason(err)
 	}
 	data, mErr := json.Marshal(result)
 	if mErr != nil {
@@ -150,7 +158,9 @@ func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) (s
 	if !json.Valid(args) {
 		args, _ = json.Marshal(call.Function.Arguments)
 	}
-	return string(data), domain.TraceStep{Tool: call.Function.Name, Args: args, Result: data, Ms: time.Since(start).Milliseconds()}, change
+	o.content = string(data)
+	o.step = domain.TraceStep{Tool: call.Function.Name, Args: args, Result: data, Ms: time.Since(start).Milliseconds()}
+	return o
 }
 
 func (a *Agent) dispatch(ctx context.Context, userID int64, name string, raw []byte) (any, error) {
@@ -439,6 +449,21 @@ func toolError(err error) string {
 		return err.Error()
 	default:
 		return "внутренняя ошибка, попробуй позже"
+	}
+}
+
+// failureReason explains a failed call to the member, without tool or field names.
+func failureReason(err error) string {
+	var ve *domain.ValidationError
+	switch {
+	case errors.As(err, &ve):
+		return ve.Message
+	case errors.Is(err, domain.ErrNotFound):
+		return "трата не найдена"
+	case isInternal(err):
+		return "внутренняя ошибка, попробуй позже"
+	default:
+		return "не удалось разобрать запрос"
 	}
 }
 
