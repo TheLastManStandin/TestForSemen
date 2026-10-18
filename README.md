@@ -66,8 +66,8 @@ flowchart LR
   SVC -- события --> HTTP
 ```
 
-- **Go-бэкенд** (`backend/`): один бинарь — REST API и бот над общим `expense.Service`. Postgres + sqlc, миграции goose, REST генерируется из `api/openapi.yaml` (oapi-codegen).
-- **Агент** (`backend/internal/agent`): собственный цикл tool calling (до 6 шагов), инструменты `add_expense`, `find_expenses`, `get_summary`, `update_expense`, `delete_expense`. Периоды («на этой неделе») вычисляет код, история диалога — последние 20 сообщений за 6 часов.
+- **Go-бэкенд** (`backend/`): один бинарь — REST API и бот над общим `expense.Service`. Postgres + sqlc, миграции goose, REST генерируется из `api/openapi.yaml` (oapi-codegen), запросы проверяются по той же спецификации.
+- **Агент** (`backend/internal/agent`): собственный цикл tool calling (до 6 шагов), инструменты `add_expense`, `find_expenses`, `get_summary`, `update_expense`, `delete_expense`. Периоды («на этой неделе») вычисляет код, история диалога — последние 20 сообщений за 6 часов. Аргументы проверяются по JSON-схемам инструментов, а подтверждение изменений в ответе («Записал: …») строит код из результатов инструментов, а не модель.
 - **Фронтенд** (`frontend/`): React 19 + Vite + TypeScript, shadcn/ui, TanStack Query, Recharts; типы API генерируются из той же спецификации; раздаётся через nginx, который проксирует `/api`.
 - **LLM настраивается через конфиг**: любой OpenAI-совместимый API (`LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY`) — OpenRouter, OpenAI, Ollama, vLLM. Исключение — голос: транскрибация использует формат OpenRouter `/audio/transcriptions`, поэтому с другим `LLM_BASE_URL` голосовые сообщения работать не будут.
 - **Адрес Telegram Bot API** задаётся необязательной переменной `TELEGRAM_API_URL` (по умолчанию `https://api.telegram.org`) — для локального Bot API сервера или прокси. Локальный Bot API сервер в режиме `--local` возвращает из getFile пути файловой системы, поэтому для голосовых сообщений нужен режим без `--local`.
