@@ -169,6 +169,14 @@ type Problem struct {
 	Type   *string       `json:"type,omitempty"`
 }
 
+// Settings defines model for Settings.
+type Settings struct {
+	// Timezone Часовой пояс семьи (IANA, APP_TIMEZONE): в нём считаются «сегодня» и периоды
+	//
+	// Example: Europe/Moscow
+	Timezone string `json:"timezone"`
+}
+
 // Stats defines model for Stats.
 type Stats struct {
 	ByCategory []CategoryTotal `json:"by_category"`
@@ -267,6 +275,9 @@ type ServerInterface interface {
 	// ListMembers Члены семьи
 	// (GET /members)
 	ListMembers(w http.ResponseWriter, r *http.Request)
+	// GetSettings Настройки семьи, общие для бота и панели
+	// (GET /settings)
+	GetSettings(w http.ResponseWriter, r *http.Request)
 	// GetStats Агрегаты для KPI и графиков
 	// (GET /stats)
 	GetStats(w http.ResponseWriter, r *http.Request, params GetStatsParams)
@@ -479,6 +490,20 @@ func (siw *ServerInterfaceWrapper) ListMembers(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMembers(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSettings operation middleware
+func (siw *ServerInterfaceWrapper) GetSettings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSettings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -740,6 +765,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/members", wrapper.ListMembers)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/settings", wrapper.GetSettings)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/expenses", wrapper.ListExpenses)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/expenses", wrapper.CreateExpense)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/expenses/{id}", wrapper.DeleteExpense)
@@ -987,6 +1013,27 @@ func (response ListMembers200JSONResponse) VisitListMembersResponse(w http.Respo
 	return err
 }
 
+type GetSettingsRequestObject struct {
+}
+
+type GetSettingsResponseObject interface {
+	VisitGetSettingsResponse(w http.ResponseWriter) error
+}
+
+type GetSettings200JSONResponse Settings
+
+func (response GetSettings200JSONResponse) VisitGetSettingsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetStatsRequestObject struct {
 	Params GetStatsParams
 }
@@ -1067,6 +1114,9 @@ type StrictServerInterface interface {
 	// ListMembers Члены семьи
 	// (GET /members)
 	ListMembers(ctx context.Context, request ListMembersRequestObject) (ListMembersResponseObject, error)
+	// GetSettings Настройки семьи, общие для бота и панели
+	// (GET /settings)
+	GetSettings(ctx context.Context, request GetSettingsRequestObject) (GetSettingsResponseObject, error)
 	// GetStats Агрегаты для KPI и графиков
 	// (GET /stats)
 	GetStats(ctx context.Context, request GetStatsRequestObject) (GetStatsResponseObject, error)
@@ -1273,6 +1323,30 @@ func (sh *strictHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ListMembersResponseObject); ok {
 		if err := validResponse.VisitListMembersResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetSettings operation middleware
+func (sh *strictHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	var request GetSettingsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetSettings(ctx, request.(GetSettingsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetSettings")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetSettingsResponseObject); ok {
+		if err := validResponse.VisitGetSettingsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

@@ -66,6 +66,9 @@ func NewService(repo Repository, pub Publisher, loc *time.Location, now func() t
 // Now returns the current time in the family's location.
 func (s *Service) Now() time.Time { return s.now().In(s.loc) }
 
+// Location is the family's time zone: "today" and periods are resolved in it.
+func (s *Service) Location() *time.Location { return s.loc }
+
 // Today returns today's domain date in the family's location.
 func (s *Service) Today() time.Time { return domain.DateOf(s.Now()) }
 

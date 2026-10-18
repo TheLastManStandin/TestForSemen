@@ -13,6 +13,14 @@ export function useMembers() {
   });
 }
 
+export function useSettings() {
+  return useQuery({
+    queryKey: ["settings"],
+    queryFn: () => unwrap(api.GET("/settings")),
+    staleTime: Infinity,
+  });
+}
+
 export function useExpenses(f: Filters) {
   return useQuery({
     queryKey: ["expenses", f.from, f.to, f.memberId, f.category, f.page],

@@ -11,35 +11,38 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useToday } from "@/hooks/useToday";
 import { CATEGORY_LABELS, formatDate, formatMoney } from "@/lib/format";
-import { todayISO } from "@/lib/period";
 
 interface Props {
   expense: Expense | null;
-  onClose: () => void;
+  /** Called with the expense the dialog was closed for: a late delete may finish after another one is shown. */
+  onClose: (expense: Expense) => void;
 }
 
 export function DeleteExpenseDialog({ expense, onClose }: Props) {
   const remove = useDeleteExpense();
+  const today = useToday();
 
   const confirm = async () => {
     if (!expense) return;
+    const target = expense;
     try {
-      await remove.mutateAsync(expense.id);
-      onClose();
+      await remove.mutateAsync(target.id);
+      onClose(target);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Не удалось удалить");
     }
   };
 
   return (
-    <AlertDialog open={expense !== null} onOpenChange={(open) => !open && onClose()}>
+    <AlertDialog open={expense !== null} onOpenChange={(open) => !open && expense && onClose(expense)}>
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Удалить трату?</AlertDialogTitle>
           <AlertDialogDescription>
             {expense &&
-              `${expense.member_name}: «${expense.comment || CATEGORY_LABELS[expense.category]}» на ${formatMoney(expense.amount)}, ${formatDate(expense.spent_at, todayISO())}. Это действие нельзя отменить.`}
+              `${expense.member_name}: «${expense.comment || CATEGORY_LABELS[expense.category]}» на ${formatMoney(expense.amount)}, ${formatDate(expense.spent_at, today())}. Это действие нельзя отменить.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>

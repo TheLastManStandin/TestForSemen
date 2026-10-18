@@ -324,3 +324,10 @@ func TestListTraces(t *testing.T) {
 	assert.Equal(t, 300, *tr.SttMs)
 	assert.Contains(t, string(data), `"args":{"amount":"350"}`)
 }
+
+func TestGetSettings(t *testing.T) {
+	e := newEnv(t)
+	resp, data := e.do(t, http.MethodGet, "/api/settings", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode, string(data))
+	assert.Equal(t, gen.Settings{Timezone: "Europe/Moscow"}, decode[gen.Settings](t, data))
+}

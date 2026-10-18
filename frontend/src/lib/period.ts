@@ -10,15 +10,10 @@ export const PRESETS: { value: Preset; label: string }[] = [
 
 const DAY_MS = 86_400_000;
 
-/** Local calendar date as "YYYY-MM-DD". */
-export function toISODate(d: Date): string {
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-export function todayISO(now: Date = new Date()): string {
-  return toISODate(now);
+/** Today as "YYYY-MM-DD" in the family's time zone (Settings.timezone), as the bot counts it. */
+export function todayISO(timeZone: string, now: Date = new Date()): string {
+  // en-CA formats dates as YYYY-MM-DD.
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
 }
 
 function utc(iso: string): Date {

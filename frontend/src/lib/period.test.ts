@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, daysInclusive, eachDay, presetRange, toISODate } from "./period";
+import { addDays, daysInclusive, eachDay, presetRange, todayISO } from "./period";
 
 const today = "2026-10-15"; // Thursday
 
@@ -29,7 +29,10 @@ describe("day helpers", () => {
     expect(eachDay("2026-09-29", "2026-10-02")).toEqual(["2026-09-29", "2026-09-30", "2026-10-01", "2026-10-02"]);
   });
 
-  it("formats local dates", () => {
-    expect(toISODate(new Date(2026, 0, 5))).toBe("2026-01-05");
+  it("takes today in the family's time zone, not the browser's", () => {
+    const lateEveningUTC = new Date("2026-10-18T21:30:00Z");
+    expect(todayISO("Europe/Moscow", lateEveningUTC)).toBe("2026-10-19");
+    expect(todayISO("America/New_York", lateEveningUTC)).toBe("2026-10-18");
+    expect(todayISO("Asia/Tokyo", new Date("2026-12-31T15:00:00Z"))).toBe("2027-01-01");
   });
 });

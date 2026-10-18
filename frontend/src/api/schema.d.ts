@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Настройки семьи, общие для бота и панели */
+        get: operations["getSettings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/expenses": {
         parameters: {
             query?: never;
@@ -120,6 +137,13 @@ export interface components {
     schemas: {
         /** @enum {string} */
         Category: "food" | "transport" | "housing" | "entertainment" | "health" | "shopping" | "other";
+        Settings: {
+            /**
+             * @description Часовой пояс семьи (IANA, APP_TIMEZONE): в нём считаются «сегодня» и периоды
+             * @example Europe/Moscow
+             */
+            timezone: string;
+        };
         Member: {
             /** Format: int64 */
             telegram_id: number;
@@ -292,6 +316,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Member"][];
+                };
+            };
+        };
+    };
+    getSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settings"];
                 };
             };
         };

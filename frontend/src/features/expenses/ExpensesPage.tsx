@@ -3,7 +3,8 @@ import { useExpenses, useStats } from "@/api/hooks";
 import type { Expense, Member } from "@/api/client";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Filters } from "@/lib/filters";
-import { daysInclusive, todayISO } from "@/lib/period";
+import { useToday } from "@/hooks/useToday";
+import { daysInclusive } from "@/lib/period";
 import { DeleteExpenseDialog } from "./DeleteExpenseDialog";
 import { ExpenseDialog } from "./ExpenseDialog";
 import { ExpensesTable } from "./ExpensesTable";
@@ -25,6 +26,7 @@ type Editing = { mode: "create" } | { mode: "edit"; expense: Expense } | null;
 export function ExpensesPage({ filters, onChange, members, highlighted }: Props) {
   const expenses = useExpenses(filters);
   const stats = useStats(filters);
+  const today = useToday();
   const [editing, setEditing] = useState<Editing>(null);
   const [deleting, setDeleting] = useState<Expense | null>(null);
 
@@ -45,7 +47,7 @@ export function ExpensesPage({ filters, onChange, members, highlighted }: Props)
         onEdit={(expense) => setEditing({ mode: "edit", expense })}
         onDelete={setDeleting}
         highlighted={highlighted}
-        todayIso={todayISO()}
+        todayIso={today()}
       />
       <ExpenseDialog
         open={editing !== null}
@@ -54,7 +56,7 @@ export function ExpensesPage({ filters, onChange, members, highlighted }: Props)
         members={members}
         defaultMemberId={filters.memberId}
       />
-      <DeleteExpenseDialog expense={deleting} onClose={() => setDeleting(null)} />
+      <DeleteExpenseDialog expense={deleting} onClose={(e) => setDeleting((cur) => (cur === e ? null : cur))} />
     </div>
   );
 }

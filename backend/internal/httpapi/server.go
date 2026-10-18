@@ -35,6 +35,10 @@ func (s *Server) ListMembers(ctx context.Context, _ gen.ListMembersRequestObject
 	return out, nil
 }
 
+func (s *Server) GetSettings(context.Context, gen.GetSettingsRequestObject) (gen.GetSettingsResponseObject, error) {
+	return gen.GetSettings200JSONResponse{Timezone: s.svc.Location().String()}, nil
+}
+
 func (s *Server) ListExpenses(ctx context.Context, req gen.ListExpensesRequestObject) (gen.ListExpensesResponseObject, error) {
 	p := req.Params
 	cat, err := parseCategory(p.Category)

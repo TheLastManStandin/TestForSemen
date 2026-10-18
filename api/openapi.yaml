@@ -18,6 +18,16 @@ paths:
               schema:
                 type: array
                 items: { $ref: "#/components/schemas/Member" }
+  /settings:
+    get:
+      operationId: getSettings
+      summary: Настройки семьи, общие для бота и панели
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Settings" }
   /expenses:
     get:
       operationId: listExpenses
@@ -142,6 +152,14 @@ components:
     Category:
       type: string
       enum: [food, transport, housing, entertainment, health, shopping, other]
+    Settings:
+      type: object
+      required: [timezone]
+      properties:
+        timezone:
+          type: string
+          example: Europe/Moscow
+          description: "Часовой пояс семьи (IANA, APP_TIMEZONE): в нём считаются «сегодня» и периоды"
     Member:
       type: object
       required: [telegram_id, name]

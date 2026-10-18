@@ -10,10 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useToday } from "@/hooks/useToday";
 import { buildExpensePatch } from "@/lib/expensePatch";
 import { splitFieldErrors } from "@/lib/formErrors";
 import { CATEGORY_CODES, CATEGORY_LABELS, normalizeAmount } from "@/lib/format";
-import { todayISO } from "@/lib/period";
 
 const schema = z.object({
   user_id: z.string().min(1, "Выберите, кто потратил"),
@@ -33,23 +33,26 @@ interface Props {
   defaultMemberId: number | null;
 }
 
-function initialValues(expense: Expense | undefined, defaultMemberId: number | null): FormValues {
-  if (expense) {
-    return {
-      user_id: String(expense.user_id),
-      amount: expense.amount.replace(/\.00$/, "").replace(".", ","),
-      category: expense.category,
-      spent_at: expense.spent_at,
-      comment: expense.comment ?? "",
-    };
-  }
-  return { user_id: defaultMemberId ? String(defaultMemberId) : "", amount: "", category: "food", spent_at: todayISO(), comment: "" };
+function expenseValues(expense: Expense): FormValues {
+  return {
+    user_id: String(expense.user_id),
+    amount: expense.amount.replace(/\.00$/, "").replace(".", ","),
+    category: expense.category,
+    spent_at: expense.spent_at,
+    comment: expense.comment ?? "",
+  };
+}
+
+function initialValues(expense: Expense | undefined, defaultMemberId: number | null, today: string): FormValues {
+  if (expense) return expenseValues(expense);
+  return { user_id: defaultMemberId ? String(defaultMemberId) : "", amount: "", category: "food", spent_at: today, comment: "" };
 }
 
 export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMemberId }: Props) {
   const create = useCreateExpense();
   const update = useUpdateExpense();
   const refreshExpense = useRefreshExpense();
+  const today = useToday();
   // The server state the edit is based on: the opened expense, or a fresh copy loaded after a conflict.
   const [reloaded, setReloaded] = useState<{ source: Expense; fresh: Expense } | null>(null);
   const base = expense && reloaded?.source === expense ? reloaded.fresh : expense;
@@ -57,18 +60,20 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   const [conflictState, setConflict] = useState<{ source: Expense; message: string } | null>(null);
   const conflict = expense && conflictState?.source === expense ? conflictState.message : null;
   const [reloading, setReloading] = useState(false);
-  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: initialValues(expense, defaultMemberId) });
+  const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: initialValues(expense, defaultMemberId, today()) });
   const { errors, isSubmitting } = form.formState;
 
   useEffect(() => {
-    if (open) form.reset(initialValues(expense, defaultMemberId));
-  }, [open, expense, defaultMemberId, form]);
+    if (open) form.reset(initialValues(expense, defaultMemberId, today()));
+  }, [open, expense, defaultMemberId, form, today]);
 
-  // Async handlers check this so a late response does not touch a dialog that is already closed.
-  const openRef = useRef(open);
+  // One session per opening of the dialog for one expense. Async handlers capture it before
+  // awaiting and drop a late result once it is stale, so a response for an expense that was
+  // closed never lands in the form, alert or open state of the one opened after it.
+  const sessionRef = useRef<object | null>(null);
   useEffect(() => {
-    openRef.current = open;
-  }, [open]);
+    sessionRef.current = open ? {} : null;
+  }, [open, expense]);
 
   const setOpen = (next: boolean) => {
     if (!next) {
@@ -80,16 +85,18 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
 
   // Loads the current server version and keeps the user's edits on top of it, so they can review and save again.
   const reloadAfterConflict = async (source: Expense) => {
+    const session = sessionRef.current;
+    const current = () => session !== null && sessionRef.current === session;
     setReloading(true);
     try {
       const fresh = await refreshExpense(source.id);
-      if (!openRef.current) return;
+      if (!current()) return;
       setReloaded({ source, fresh });
       setConflict(null);
-      form.reset(initialValues(fresh, defaultMemberId), { keepDirtyValues: true });
+      form.reset(expenseValues(fresh), { keepDirtyValues: true });
       toast.info("Данные обновлены. Проверьте поля и сохраните ещё раз.");
     } catch (err) {
-      if (!openRef.current) return;
+      if (!current()) return;
       if (err instanceof ApiError && err.status === 404) {
         toast.error("Трату уже удалили.");
         setOpen(false);
@@ -97,16 +104,18 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         setConflict({ source, message: `Не удалось обновить данные: ${err instanceof Error ? err.message : "ошибка сети"}` });
       }
     } finally {
-      setReloading(false);
+      if (current()) setReloading(false);
     }
   };
 
-  // handleSubmit is invoked per event (not during render) because the handler reads openRef.
-  const onSubmit = (e: FormEvent<HTMLFormElement>) =>
-    form.handleSubmit(async (v) => {
+  // handleSubmit is invoked per event (not during render) because the handler reads sessionRef.
+  const onSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const session = sessionRef.current;
+    const current = () => session !== null && sessionRef.current === session;
+    return form.handleSubmit(async (v) => {
       try {
         if (base) {
-          const patch = buildExpensePatch(initialValues(base, defaultMemberId), v, base.version);
+          const patch = buildExpensePatch(expenseValues(base), v, base.version);
           if (patch) await update.mutateAsync({ id: base.id, patch });
         } else {
           await create.mutateAsync({
@@ -117,8 +126,9 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
             comment: v.comment.trim(),
           });
         }
-        setOpen(false);
+        if (current()) setOpen(false);
       } catch (err) {
+        if (!current()) return;
         const message = conflictMessage(err);
         if (expense && message) {
           setConflict({ source: expense, message });
@@ -130,6 +140,7 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         else if (placed.length === 0) toast.error(err instanceof Error ? err.message : "Не удалось сохранить");
       }
     })(e);
+  };
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
