@@ -222,7 +222,7 @@ type editBeforeDeleteRepo struct {
 }
 
 func (r *editBeforeDeleteRepo) Delete(ctx context.Context, id int64, owner *int64) (domain.Expense, error) {
-	if _, err := r.Repo.Update(ctx, id, r.edit, nil); err != nil {
+	if _, err := r.Update(ctx, id, r.edit, nil); err != nil {
 		return domain.Expense{}, err
 	}
 	return r.Repo.Delete(ctx, id, owner)

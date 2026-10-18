@@ -4,6 +4,8 @@ generate:
   models: true
   std-http-server: true
   strict-server: true
+  # The spec is embedded so requests are validated against it (validate.go).
+  embedded-spec: true
 output-options:
   # SSE is hand-written in sse.go; it stays in the spec for documentation and frontend types.
   exclude-operation-ids: [streamEvents]

@@ -39,5 +39,9 @@ func NewHandler(d Deps) http.Handler {
 	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{BaseURL: "/api", BaseRouter: mux, ErrorHandlerFunc: badRequest})
 	mux.Handle("GET /api/events", sseHandler(d.StreamsCtx, d.Bus, d.Heartbeat, d.Log))
 	mux.Handle("GET /healthz", healthHandler(d.Health))
-	return recoverer(d.Log, logRequests(d.Log, mux))
+	validated, err := validateRequests("/api", mux)
+	if err != nil {
+		panic(err) // the spec is embedded at build time, so this is a programming error
+	}
+	return recoverer(d.Log, logRequests(d.Log, validated))
 }

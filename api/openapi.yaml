@@ -182,6 +182,7 @@ components:
         version: { type: integer, format: int64, description: "Растёт на 1 при каждом изменении" }
     ExpenseCreate:
       type: object
+      additionalProperties: false
       required: [user_id, amount, category, spent_at]
       properties:
         user_id: { type: integer, format: int64 }
@@ -191,6 +192,7 @@ components:
         comment: { type: string }
     ExpensePatch:
       type: object
+      additionalProperties: false
       properties:
         user_id: { type: integer, format: int64 }
         amount: { type: string }

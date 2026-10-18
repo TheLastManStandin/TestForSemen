@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -330,4 +331,52 @@ func TestGetSettings(t *testing.T) {
 	resp, data := e.do(t, http.MethodGet, "/api/settings", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode, string(data))
 	assert.Equal(t, gen.Settings{Timezone: "Europe/Moscow"}, decode[gen.Settings](t, data))
+}
+
+func TestRequestBodiesFollowTheContract(t *testing.T) {
+	e := newEnv(t)
+	created := e.create(t, papa, "350", "food", "2026-10-14", "кофе")
+	path := fmt.Sprintf("/api/expenses/%d", created.Id)
+
+	cases := []struct {
+		name, method, path string
+		body               map[string]any
+		field, message     string
+	}{
+		{"unknown create field", http.MethodPost, "/api/expenses",
+			map[string]any{"user_id": papa, "amount": "10", "category": "food", "spent_at": "2026-10-14", "amout": "1"}, "amout", "неизвестное поле"},
+		{"misspelled patch field", http.MethodPatch, path, map[string]any{"amout": "1300", "comment": "такси"}, "amout", "неизвестное поле"},
+		{"missing required field", http.MethodPost, "/api/expenses",
+			map[string]any{"user_id": papa, "category": "food", "spent_at": "2026-10-14"}, "amount", "обязательное поле"},
+		{"value outside enum", http.MethodPatch, path, map[string]any{"category": "pets"}, "category", "недопустимое значение"},
+		{"wrong type", http.MethodPatch, path, map[string]any{"amount": 1300}, "amount", "недопустимое значение"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			resp, data := e.do(t, c.method, c.path, c.body)
+			require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode, string(data))
+			assert.Equal(t, "application/problem+json", resp.Header.Get("Content-Type"))
+			p := decode[gen.Problem](t, data)
+			require.NotNil(t, p.Errors, string(data))
+			assert.Equal(t, c.field, (*p.Errors)[0].Field)
+			assert.Contains(t, (*p.Errors)[0].Message, c.message)
+		})
+	}
+
+	resp, data := e.do(t, http.MethodGet, path, nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, created, decode[gen.Expense](t, data), "rejected requests change nothing")
+}
+
+func TestMalformedJSONIsBadRequest(t *testing.T) {
+	e := newEnv(t)
+	for _, body := range []string{`{"user_id":`, `{"user_id":1} {"x":2}`} {
+		req, err := http.NewRequest(http.MethodPost, e.srv.URL+"/api/expenses", strings.NewReader(body))
+		require.NoError(t, err)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		require.NoError(t, err)
+		resp.Body.Close()
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+	}
 }
