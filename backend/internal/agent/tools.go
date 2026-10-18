@@ -20,6 +20,9 @@ var errUnknownTool = errors.New("неизвестный инструмент")
 // every tool acts on expense.Own(userID) where userID comes from the Telegram update.
 var toolDefs = buildToolDefs()
 
+// argSchemas are enforced on every call, so the declared schema is the accepted one.
+var argSchemas = compileArgSchemas(toolDefs)
+
 // ToolNames lists the agent's tools (used by tests and evals).
 func ToolNames() []string {
 	names := make([]string, 0, len(toolDefs))
@@ -164,6 +167,13 @@ func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) to
 }
 
 func (a *Agent) dispatch(ctx context.Context, userID int64, name string, raw []byte) (any, error) {
+	schema, ok := argSchemas[name]
+	if !ok {
+		return nil, fmt.Errorf("%w %q", errUnknownTool, name)
+	}
+	if err := schema.check(raw); err != nil {
+		return nil, err
+	}
 	switch name {
 	case "add_expense":
 		return a.addExpense(ctx, userID, raw)

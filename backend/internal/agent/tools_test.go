@@ -105,7 +105,7 @@ func TestAddExpenseAcceptsNumericAmount(t *testing.T) {
 
 func TestAddExpenseInvalid(t *testing.T) {
 	a, svc := newToolAgent(t)
-	assert.Contains(t, errorOf(call(t, a, tPapa, "add_expense", `{"amount":"350","category":"pets","comment":"x"}`)), "категория")
+	assert.Contains(t, errorOf(call(t, a, tPapa, "add_expense", `{"amount":"350","category":"pets","comment":"x"}`)), `"category"`)
 	assert.NotEmpty(t, errorOf(call(t, a, tPapa, "add_expense", `{"amount":"много","category":"food","comment":"x"}`)))
 	assert.NotEmpty(t, errorOf(call(t, a, tPapa, "add_expense", `{"amount":"350","category":"food","comment":"x","date":"14.10"}`)))
 	assert.Empty(t, listOwn(t, svc, tPapa))
@@ -250,4 +250,46 @@ func TestToolSchemasKeepDeclaredPropertyOrder(t *testing.T) {
 	for _, td := range wire {
 		assert.Equal(t, want[td.Function.Name], propertyOrder(t, td.Function.Parameters), td.Function.Name)
 	}
+}
+
+func TestToolArgsRejectUndeclaredFields(t *testing.T) {
+	a, _ := newToolAgent(t)
+	for _, name := range ToolNames() {
+		assert.Contains(t, errorOf(call(t, a, tPapa, name, `{"user_id":2}`)), `"user_id"`, name)
+	}
+}
+
+func TestUpdateWithMisspelledFieldChangesNothing(t *testing.T) {
+	a, svc := newToolAgent(t)
+	e, err := svc.Create(tctx, expense.CreateInput{UserID: tPapa, Amount: 120000, Category: domain.CategoryTransport, Comment: "такси"})
+	require.NoError(t, err)
+
+	res := call(t, a, tPapa, "update_expense", `{"id":`+itoa(e.ID)+`,"amout":"1300","comment":"такси домой"}`)
+	assert.Contains(t, errorOf(res), `"amout"`)
+	got, err := svc.Get(tctx, expense.All(), e.ID)
+	require.NoError(t, err)
+	assert.Equal(t, e, got, "a partly understood call must not apply the rest")
+}
+
+func TestToolArgsRequireDeclaredFields(t *testing.T) {
+	a, svc := newToolAgent(t)
+	for _, args := range []string{
+		`{"amount":"350","category":"food"}`,
+		`{"amount":"350","category":"food","comment":null}`,
+	} {
+		assert.Contains(t, errorOf(call(t, a, tPapa, "add_expense", args)), `"comment"`, args)
+	}
+	assert.Contains(t, errorOf(call(t, a, tPapa, "delete_expense", `{}`)), `"id"`)
+	assert.Empty(t, listOwn(t, svc, tPapa))
+
+	ok := call(t, a, tPapa, "add_expense", `{"amount":"350","category":"food","comment":""}`)
+	assert.Empty(t, errorOf(ok), "an empty comment is a value")
+}
+
+func TestToolArgsEnforceEnums(t *testing.T) {
+	a, _ := newToolAgent(t)
+	assert.Contains(t, errorOf(call(t, a, tPapa, "find_expenses", `{"sort":"newest"}`)), "sort")
+	assert.Contains(t, errorOf(call(t, a, tPapa, "get_summary", `{"group_by":"week"}`)), "group_by")
+	assert.Empty(t, errorOf(call(t, a, tPapa, "find_expenses", `{"sort":"","period":null}`)), "empty optional values mean «not set»")
+	assert.Empty(t, errorOf(call(t, a, tPapa, "get_summary", `{"group_by":"day"}`)))
 }

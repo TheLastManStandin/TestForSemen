@@ -5,8 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/llm"
 )
 
 // flexString accepts a JSON string or number: models sometimes send 350 instead of "350".
@@ -76,4 +80,57 @@ type rangeArgs struct {
 	Period string `json:"period"`
 	From   string `json:"from"`
 	To     string `json:"to"`
+}
+
+// argSchema is the part of a tool's declared JSON schema that is checked before the tool
+// runs, so the model gets an error instead of a silently ignored or defaulted field.
+// Value types are checked when the arguments are decoded.
+type argSchema struct {
+	Properties map[string]struct {
+		Enum []string `json:"enum"`
+	} `json:"properties"`
+	Required []string `json:"required"`
+}
+
+// compileArgSchemas extracts the checked part of each tool's parameters.
+func compileArgSchemas(tools []llm.Tool) map[string]argSchema {
+	out := make(map[string]argSchema, len(tools))
+	for _, t := range tools {
+		var s argSchema
+		if err := json.Unmarshal(t.Function.Parameters, &s); err != nil {
+			panic(fmt.Sprintf("tool %s: %v", t.Function.Name, err))
+		}
+		out[t.Function.Name] = s
+	}
+	return out
+}
+
+// check rejects undeclared fields (additionalProperties: false), missing or null required
+// fields and values outside an enum. An empty string or null in an optional field means
+// «not set», as models often send them for fields they do not use.
+func (s argSchema) check(raw []byte) error {
+	if len(bytes.TrimSpace(raw)) == 0 {
+		raw = []byte("{}")
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return &argError{err: err}
+	}
+	for _, name := range slices.Sorted(maps.Keys(fields)) {
+		p, ok := s.Properties[name]
+		if !ok {
+			return &argError{err: fmt.Errorf("неизвестное поле %q", name)}
+		}
+		var v string
+		if len(p.Enum) == 0 || json.Unmarshal(fields[name], &v) != nil || v == "" || slices.Contains(p.Enum, v) {
+			continue
+		}
+		return &argError{err: fmt.Errorf("поле %q: недопустимое значение %q, ожидается одно из: %s", name, v, strings.Join(p.Enum, ", "))}
+	}
+	for _, name := range s.Required {
+		if v, ok := fields[name]; !ok || string(bytes.TrimSpace(v)) == "null" {
+			return &argError{err: fmt.Errorf("нет обязательного поля %q", name)}
+		}
+	}
+	return nil
 }
