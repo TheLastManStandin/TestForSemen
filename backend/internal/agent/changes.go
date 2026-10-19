@@ -115,9 +115,9 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 	return reply, nil
 }
 
-// confirmationStems start the first word of a sentence in which the model reports a change
-// («Записал», «Записано», «Добавлено», «Зафиксировал», «Готово»); lowercased, ё as е.
-var confirmationStems = []string{"записал", "записан", "добав", "внес", "сохран", "измен", "исправ", "обнов", "помен", "удал", "зафиксир", "учел", "учла", "готово"}
+// confirmationStems start a word with which the model reports a change («Записал», «Записано»,
+// «Добавлено», «Зафиксировал», «перенёс», «Готово»); lowercased, ё as е.
+var confirmationStems = []string{"записал", "записан", "добав", "внес", "сохран", "измен", "исправ", "обнов", "помен", "перенес", "удал", "зафиксир", "учел", "учла", "готово"}
 
 // hedgeWords mark a sentence that explains, qualifies or asks rather than reports.
 var hedgeWords = map[string]bool{"но": true, "бы": true, "не": true, "однако": true}
@@ -138,7 +138,8 @@ func dropRestatedChanges(text, confirmation string) string {
 	for line := range strings.Lines(text) {
 		var kept []string
 		for _, sentence := range splitSentences(line) {
-			if !reportsChange(sentence) || confirmation != "" && hasNewNumber(sentence, known) {
+			changed := confirmation != ""
+			if !reportsChange(sentence, changed) || changed && hasNewNumber(sentence, known) {
 				kept = append(kept, sentence)
 			}
 		}
@@ -166,22 +167,25 @@ func splitSentences(line string) []string {
 	return out
 }
 
-// reportsChange tells whether a sentence reports a change, like «Записал кофе.» or «Готово!».
-// A question or a sentence with «но», «бы», «не» explains or asks something and is not one.
-func reportsChange(sentence string) bool {
+// reportsChange tells whether a sentence reports a change, like «Записал кофе.», «Готово!» or,
+// with anywhere, «Обед за 650 ₽ перенёс на вторник.». Without changes in the turn only a leading
+// verb counts: «у тебя записано 5 трат» is then a fact, not a claim. A question or a sentence
+// with «но», «бы», «не» explains or asks something and is not a report.
+func reportsChange(sentence string, anywhere bool) bool {
 	if strings.Contains(sentence, "?") {
 		return false
 	}
 	words := strings.FieldsFunc(strings.ReplaceAll(strings.ToLower(sentence), "ё", "е"), func(r rune) bool { return !unicode.IsLetter(r) })
-	if len(words) == 0 || !slices.ContainsFunc(confirmationStems, func(stem string) bool { return strings.HasPrefix(words[0], stem) }) {
+	if slices.ContainsFunc(words, func(w string) bool { return hedgeWords[w] }) {
 		return false
 	}
-	for _, w := range words[1:] {
-		if hedgeWords[w] {
-			return false
-		}
+	isVerb := func(w string) bool {
+		return slices.ContainsFunc(confirmationStems, func(stem string) bool { return strings.HasPrefix(w, stem) })
 	}
-	return true
+	if anywhere {
+		return slices.ContainsFunc(words, isVerb)
+	}
+	return len(words) > 0 && isVerb(words[0])
 }
 
 func hasNewNumber(sentence string, known map[string]bool) bool {

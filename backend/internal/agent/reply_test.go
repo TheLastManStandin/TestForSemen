@@ -209,6 +209,9 @@ func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
 		{"Зафиксировал трату. Добавлено.", ""},
 		// A sentence with a number the confirmation does not have carries new information.
 		{"Готово, за октябрь теперь 12 400 ₽.", "Готово, за октябрь теперь 12 400 ₽."},
+		// The verb need not come first.
+		{"Кофе за 350 ₽ перенёс на сегодня.", ""},
+		{"Сейчас у тебя записано 5 трат.", "Сейчас у тебя записано 5 трат."},
 	} {
 		t.Run(c.model, func(t *testing.T) {
 			f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{calls(tc("a", "add_expense", addCoffee)), text(c.model)}})
