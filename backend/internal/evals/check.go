@@ -106,12 +106,29 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 			fail("в ответе не должно быть %q", s)
 		}
 	}
+	// The agent confirms each change with one line; more lines mean the model restated them.
+	changes := len(out.Diff.Created) + len(out.Diff.Updated) + len(out.Diff.Deleted)
+	if n := confirmationLines(reply); n > changes {
+		fail("подтверждение изменений повторено: %d строк на %d изменений", n, changes)
+	}
 	for _, tool := range exp.Tools {
 		if !slices.Contains(out.Tools, tool) {
 			fail("не вызван инструмент %s", tool)
 		}
 	}
 	return fails
+}
+
+// confirmationLines counts reply lines that start like a change confirmation.
+func confirmationLines(normalizedReply string) int {
+	n := 0
+	for line := range strings.Lines(normalizedReply) {
+		line = strings.TrimLeft(line, " •-")
+		if strings.HasPrefix(line, "записал") || strings.HasPrefix(line, "изменил") || strings.HasPrefix(line, "удалил") {
+			n++
+		}
+	}
+	return n
 }
 
 func matchCreated(m ExpenseMatch, e domain.Expense, today time.Time) error {

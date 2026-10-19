@@ -18,8 +18,8 @@ var ErrPartial = errors.New("agent: turn failed after completed changes")
 // without a reply. Run does not return it: the member still gets a reply.
 var ErrEmptyReply = errors.New("agent: empty model reply")
 
-// ReplyNotUnderstood is sent when the model ends a turn with neither changes nor a reply.
-const ReplyNotUnderstood = "Не понял запрос, попробуй сформулировать иначе"
+// ReplyNoAnswer is sent when the model ends a turn with neither changes nor a reply.
+const ReplyNoAnswer = "Не получилось ответить, попробуй сформулировать иначе"
 
 // ChangeKind is the kind of a completed data change.
 type ChangeKind string
@@ -86,9 +86,9 @@ func confirmChanges(changes []Change, today time.Time) string {
 
 // composeReply builds the member's reply for a turn the model finished. Changes are confirmed
 // from the tool results, never from the model's wording; the model's text follows as the answer
-// to the rest of the message. failure is the user-facing reason the last tool batch failed, if it did.
-// ErrEmptyReply means the model ended the turn without changing anything or saying anything.
-func composeReply(modelText string, changes []Change, failure string, today time.Time) (string, error) {
+// to the rest of the message. failures are the distinct user-facing reasons calls of the last tool
+// batch failed. ErrEmptyReply means the model ended the turn without changing or saying anything.
+func composeReply(modelText string, changes []Change, failures []string, today time.Time) (string, error) {
 	var parts []string
 	if len(changes) > 0 {
 		parts = append(parts, confirmChanges(changes, today))
@@ -96,13 +96,13 @@ func composeReply(modelText string, changes []Change, failure string, today time
 	switch modelText = strings.TrimSpace(modelText); {
 	case modelText != "":
 		parts = append(parts, modelText)
-	case failure != "":
-		parts = append(parts, "Не получилось: "+failure+".")
+	case len(failures) > 0:
+		parts = append(parts, "Не получилось: "+strings.Join(failures, "; ")+".")
 	}
 	reply := strings.Join(parts, "\n\n")
 	if len(changes) == 0 && modelText == "" {
 		if reply == "" {
-			reply = ReplyNotUnderstood
+			reply = ReplyNoAnswer
 		}
 		return reply, ErrEmptyReply
 	}

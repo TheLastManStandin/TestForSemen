@@ -82,9 +82,12 @@ type rangeArgs struct {
 	To     string `json:"to"`
 }
 
-// argSchema is the part of a tool's declared JSON schema that is checked before the tool
+// argSchema is the part of a tool's declared JSON schema that is enforced before the tool
 // runs, so the model gets an error instead of a silently ignored or defaulted field.
-// Value types are checked when the arguments are decoded.
+// It is deliberately not a full JSON Schema validator: value types are checked when the
+// arguments are decoded, which tolerates numbers sent as strings and back ("id": "12",
+// "amount": 350) — a common model habit that a strict "type" check would turn into errors.
+// Numeric bounds (limit 1..50) are clamped by the tools.
 type argSchema struct {
 	Properties map[string]struct {
 		Enum []string `json:"enum"`
@@ -92,7 +95,7 @@ type argSchema struct {
 	Required []string `json:"required"`
 }
 
-// compileArgSchemas extracts the checked part of each tool's parameters.
+// compileArgSchemas extracts the enforced part of each tool's parameters.
 func compileArgSchemas(tools []llm.Tool) map[string]argSchema {
 	out := make(map[string]argSchema, len(tools))
 	for _, t := range tools {
@@ -105,32 +108,38 @@ func compileArgSchemas(tools []llm.Tool) map[string]argSchema {
 	return out
 }
 
-// check rejects undeclared fields (additionalProperties: false), missing or null required
-// fields and values outside an enum. An empty string or null in an optional field means
-// «not set», as models often send them for fields they do not use.
-func (s argSchema) check(raw []byte) error {
+// normalize rejects undeclared fields (additionalProperties: false), missing or null required
+// fields and values outside an enum, and returns the arguments with «not set» values removed:
+// null in an optional field and "" in an optional enum field, which models often send for
+// fields they do not use. Other empty strings are values ("comment": "" clears a comment).
+func (s argSchema) normalize(raw []byte) ([]byte, error) {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		raw = []byte("{}")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
-		return &argError{err: err}
+		return nil, &argError{err: err}
 	}
 	for _, name := range slices.Sorted(maps.Keys(fields)) {
 		p, ok := s.Properties[name]
 		if !ok {
-			return &argError{err: fmt.Errorf("неизвестное поле %q", name)}
+			return nil, &argError{err: fmt.Errorf("неизвестное поле %q", name)}
 		}
-		var v string
-		if len(p.Enum) == 0 || json.Unmarshal(fields[name], &v) != nil || v == "" || slices.Contains(p.Enum, v) {
-			continue
+		optional := !slices.Contains(s.Required, name)
+		v := bytes.TrimSpace(fields[name])
+		var str string
+		isEnumStr := len(p.Enum) > 0 && json.Unmarshal(v, &str) == nil
+		switch {
+		case optional && (string(v) == "null" || isEnumStr && str == ""):
+			delete(fields, name)
+		case isEnumStr && !slices.Contains(p.Enum, str):
+			return nil, &argError{err: fmt.Errorf("поле %q: недопустимое значение %q, ожидается одно из: %s", name, str, strings.Join(p.Enum, ", "))}
 		}
-		return &argError{err: fmt.Errorf("поле %q: недопустимое значение %q, ожидается одно из: %s", name, v, strings.Join(p.Enum, ", "))}
 	}
 	for _, name := range s.Required {
 		if v, ok := fields[name]; !ok || string(bytes.TrimSpace(v)) == "null" {
-			return &argError{err: fmt.Errorf("нет обязательного поля %q", name)}
+			return nil, &argError{err: fmt.Errorf("нет обязательного поля %q", name)}
 		}
 	}
-	return nil
+	return json.Marshal(fields)
 }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -142,7 +143,7 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 	turn := []llm.Message{user}
 
 	var res Result
-	var failure string // why the latest tool batch failed, for the reply
+	var failures []string // why calls of the latest tool batch failed, for the reply
 	temperature := a.cfg.Temperature
 	for iter := range a.cfg.MaxIterations {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{Model: a.cfg.Model, Messages: msgs, Tools: toolDefs, Temperature: &temperature})
@@ -166,21 +167,21 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 		turn = append(turn, reply)
 
 		if len(reply.ToolCalls) == 0 {
-			res.Reply, err = composeReply(reply.Content, res.Changes, failure, a.svc.Today())
-			// History keeps what the member saw, so the next turn knows what was confirmed.
-			turn[len(turn)-1].Content = res.Reply
+			// History keeps the model's own words: the facts are in the tool results, and stored
+			// confirmations would teach the model to restate them.
+			res.Reply, err = composeReply(reply.Content, res.Changes, failures, a.svc.Today())
 			a.saveTurn(ctx, in.UserID, turn)
 			return res, err
 		}
-		failure = ""
+		failures = failures[:0]
 		for _, call := range reply.ToolCalls {
 			o := a.execute(ctx, in.UserID, call)
 			res.Steps = append(res.Steps, o.step)
 			if o.change != nil {
 				res.Changes = append(res.Changes, *o.change)
 			}
-			if o.failure != "" {
-				failure = o.failure
+			if o.failure != "" && !slices.Contains(failures, o.failure) {
+				failures = append(failures, o.failure)
 			}
 			toolMsg := llm.Message{Role: llm.RoleTool, ToolCallID: call.ID, Content: o.content}
 			msgs = append(msgs, toolMsg)
@@ -238,20 +239,22 @@ func (a *Agent) userLock(userID int64) *sync.Mutex {
 	return v.(*sync.Mutex)
 }
 
-// uniqueCalls drops a repeated tool call id within one response, so a duplicated call is
-// executed once and every call keeps exactly one result. Ids are compared only within a
-// response: some providers number calls per response. Missing ids are filled in.
+// uniqueCalls makes tool call ids unique within one response, so every call keeps exactly one
+// result. A call repeated with the same id, name and arguments is a duplicate and runs once;
+// a different call that reuses an id (some providers give all parallel calls one id) gets a new
+// id; missing ids are filled in. Ids are compared only within a response: some providers
+// number calls anew in each one.
 func uniqueCalls(calls []llm.ToolCall, iter int) []llm.ToolCall {
-	seen := make(map[string]bool, len(calls))
-	out := calls[:0:0]
+	seen := make(map[string]llm.FunctionCall, len(calls))
+	out := make([]llm.ToolCall, 0, len(calls))
 	for i, c := range calls {
-		if c.ID == "" {
-			c.ID = fmt.Sprintf("call_%d_%d", iter, i)
-		}
-		if seen[c.ID] {
+		if fn, ok := seen[c.ID]; ok && fn == c.Function {
 			continue
 		}
-		seen[c.ID] = true
+		if _, taken := seen[c.ID]; taken || c.ID == "" {
+			c.ID = fmt.Sprintf("call_%d_%d", iter, i)
+		}
+		seen[c.ID] = c.Function
 		out = append(out, c)
 	}
 	return out

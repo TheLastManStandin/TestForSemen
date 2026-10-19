@@ -171,7 +171,8 @@ func (a *Agent) dispatch(ctx context.Context, userID int64, name string, raw []b
 	if !ok {
 		return nil, fmt.Errorf("%w %q", errUnknownTool, name)
 	}
-	if err := schema.check(raw); err != nil {
+	raw, err := schema.normalize(raw)
+	if err != nil {
 		return nil, err
 	}
 	switch name {

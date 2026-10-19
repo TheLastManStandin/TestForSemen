@@ -293,3 +293,16 @@ func TestToolArgsEnforceEnums(t *testing.T) {
 	assert.Empty(t, errorOf(call(t, a, tPapa, "find_expenses", `{"sort":"","period":null}`)), "empty optional values mean «not set»")
 	assert.Empty(t, errorOf(call(t, a, tPapa, "get_summary", `{"group_by":"day"}`)))
 }
+
+func TestUpdateTreatsEmptyEnumAsNotSet(t *testing.T) {
+	a, svc := newToolAgent(t)
+	e, err := svc.Create(tctx, expense.CreateInput{UserID: tPapa, Amount: 120000, Category: domain.CategoryTransport, Comment: "такси"})
+	require.NoError(t, err)
+
+	res := call(t, a, tPapa, "update_expense", `{"id":`+itoa(e.ID)+`,"amount":"1300","category":"","date":null}`)
+	require.Empty(t, errorOf(res))
+	got, err := svc.Get(tctx, expense.All(), e.ID)
+	require.NoError(t, err)
+	assert.Equal(t, domain.Money(130000), got.Amount)
+	assert.Equal(t, domain.CategoryTransport, got.Category)
+}

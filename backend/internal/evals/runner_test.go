@@ -20,7 +20,7 @@ func (fakeLLM) Chat(_ context.Context, req llm.ChatRequest) (llm.ChatResponse, e
 	last := req.Messages[len(req.Messages)-1]
 	switch {
 	case last.Role == llm.RoleTool:
-		return llm.ChatResponse{Message: llm.Message{Role: llm.RoleAssistant, Content: "Записал: кофе — 350 ₽"}, Usage: llm.Usage{PromptTokens: 10, CompletionTokens: 5}}, nil
+		return llm.ChatResponse{Message: llm.Message{Role: llm.RoleAssistant, Content: ""}, Usage: llm.Usage{PromptTokens: 10, CompletionTokens: 5}}, nil
 	case last.Content == "кофе 350":
 		return llm.ChatResponse{Message: llm.Message{Role: llm.RoleAssistant, ToolCalls: []llm.ToolCall{{
 			ID: "1", Type: "function", Function: llm.FunctionCall{Name: "add_expense", Arguments: `{"amount":"350","category":"food","comment":"кофе"}`},

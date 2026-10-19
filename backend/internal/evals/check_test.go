@@ -148,3 +148,18 @@ func TestResolveDate(t *testing.T) {
 	_, err = ResolveDate("yesterday", today)
 	assert.Error(t, err)
 }
+
+func TestCheckFlagsConfirmationRepeatedByModel(t *testing.T) {
+	s := seeded(t)
+	coffee := domain.Expense{ID: 999, Amount: 35000, Category: domain.CategoryFood, SpentAt: today, Comment: "кофе"}
+	exp := Expect{Created: []ExpenseMatch{{Amount: "350"}}}
+	out := Outcome{Diff: Diff{Created: []domain.Expense{coffee}}}
+
+	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября"
+	assert.Empty(t, Check(exp, s, out, today))
+	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗа неделю — 1 550 ₽."
+	assert.Empty(t, Check(exp, s, out, today))
+	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗаписал кофе за 350 ₽"
+	assert.NotEmpty(t, Check(exp, s, out, today), "the model restated the confirmation")
+	assert.Empty(t, Check(Expect{}, s, Outcome{Reply: "Ничего не удалил: уточни, какую трату"}, today))
+}

@@ -23,7 +23,8 @@ func TestReplyConfirmsChangesFromToolResults(t *testing.T) {
 	assert.Empty(t, f.mem.Traces()[0].Error)
 
 	h := history(t, f, papa)
-	assert.Equal(t, want, h[len(h)-1].Content, "history keeps what the member saw")
+	assert.Empty(t, h[len(h)-1].Content, "history keeps the model's own words, so it does not learn to repeat confirmations")
+	assert.Equal(t, want, f.mem.Traces()[0].Output)
 }
 
 func TestReplyAppendsModelTextAfterConfirmation(t *testing.T) {
@@ -77,13 +78,34 @@ func TestReplyEmptyAfterRecoveredFailureIsNotAFailure(t *testing.T) {
 	assert.Empty(t, f.mem.Traces()[0].Error)
 }
 
-func TestReplyEmptyWithoutToolsAsksToRephrase(t *testing.T) {
-	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{text("   ")}})
+func TestReplyEmptyWithoutChangesAsksToRephrase(t *testing.T) {
+	for name, replies := range map[string][]llm.ChatResponse{
+		"no tools":     {text("   ")},
+		"after a read": {calls(tc("f", "find_expenses", `{}`)), text("")},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t, &scriptedLLM{replies: replies})
+			res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "что там"})
+			require.NoError(t, err)
+			assert.Equal(t, agent.ReplyNoAnswer, res.Reply)
+			assert.Contains(t, f.mem.Traces()[0].Error, agent.ErrEmptyReply.Error())
+		})
+	}
+}
 
-	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "эээ"})
+func TestReplyEmptyReportsEveryFailureOfTheLastBatch(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(
+			tc("a", "add_expense", `{"amount":"0","category":"food","comment":"кофе"}`),
+			tc("d", "delete_expense", `{"id":999999}`),
+			tc("b", "add_expense", `{"amount":"0","category":"food","comment":"чай"}`),
+		),
+		text(""),
+	}})
+
+	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе и чай по нулям, удали 999999"})
 	require.NoError(t, err)
-	assert.Equal(t, agent.ReplyNotUnderstood, res.Reply)
-	assert.Contains(t, f.mem.Traces()[0].Error, agent.ErrEmptyReply.Error())
+	assert.Equal(t, "Не получилось: сумма должна быть больше нуля; трата не найдена.", res.Reply)
 }
 
 func TestToolCallIDRepeatedInOneResponseRunsOnce(t *testing.T) {
@@ -102,6 +124,26 @@ func TestToolCallIDRepeatedInOneResponseRunsOnce(t *testing.T) {
 	assistant, tool := second[len(second)-2], second[len(second)-1]
 	assert.Len(t, assistant.ToolCalls, 1, "the duplicate is dropped so every call has one result")
 	assert.Equal(t, "a", tool.ToolCallID)
+}
+
+func TestToolCallIDSharedByDifferentCallsRunsEach(t *testing.T) {
+	// Some providers give every parallel call the same id.
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(tc("call_0", "add_expense", addCoffee), tc("call_0", "add_expense", `{"amount":"1200","category":"transport","comment":"такси"}`)),
+		text(""),
+	}})
+
+	_, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350 и такси 1200"})
+	require.NoError(t, err)
+	assert.Len(t, own(t, f.svc, papa), 2)
+
+	second := f.llm.requests[1].Messages
+	assistant := second[len(second)-3]
+	require.Len(t, assistant.ToolCalls, 2)
+	a, b := assistant.ToolCalls[0].ID, assistant.ToolCalls[1].ID
+	assert.NotEqual(t, a, b, "colliding ids are renamed so each call keeps its own result")
+	assert.Equal(t, a, second[len(second)-2].ToolCallID)
+	assert.Equal(t, b, second[len(second)-1].ToolCallID)
 }
 
 func TestToolCallIDsMayRepeatAcrossResponses(t *testing.T) {
