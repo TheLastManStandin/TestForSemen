@@ -111,7 +111,6 @@ func RenderReport(s Summary, results []Result, at time.Time) string {
 	}
 	if len(failed) == 0 && len(provider) == 0 {
 		b.WriteString("\nВсе кейсы пройдены.\n")
-		return b.String()
 	}
 	if len(failed) > 0 {
 		b.WriteString("\n## Провалы\n")
@@ -123,6 +122,22 @@ func RenderReport(s Summary, results []Result, at time.Time) string {
 		b.WriteString("\n## Ошибки провайдера\n\nНе считаются провалами агента; кейсы стоит перезапустить.\n")
 		for _, r := range provider {
 			renderFailure(&b, r)
+		}
+	}
+	var noted []Result
+	for _, r := range results {
+		if len(r.Notes) > 0 {
+			noted = append(noted, r)
+		}
+	}
+	if len(noted) > 0 {
+		b.WriteString("\n## Замечания\n\nНе влияют на результат: факты в ответе верны, но есть изъян.\n")
+		for _, r := range noted {
+			fmt.Fprintf(&b, "\n### %s (%s)\n\n", r.Case.Name, r.Case.Group)
+			fmt.Fprintf(&b, "- Ответ: «%s»\n", strings.ReplaceAll(r.Reply, "\n", " "))
+			for _, n := range r.Notes {
+				fmt.Fprintf(&b, "  - %s\n", n)
+			}
 		}
 	}
 	return b.String()

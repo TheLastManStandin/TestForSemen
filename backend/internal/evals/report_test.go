@@ -71,6 +71,17 @@ func TestRenderReportSeparatesProviderErrors(t *testing.T) {
 	assert.Contains(t, provider, "llm api error 429")
 }
 
+func TestRenderReportListsNotesApartFromFailures(t *testing.T) {
+	results := []Result{{Case: Case{Name: "n1", Group: "add", Input: "кофе 350"}, Reply: "Записал: кофе — 350 ₽\n\nЗаписано: 350 ₽", Notes: []string{"сумма 350 упомянута 2 раз(а)"}}}
+	r := RenderReport(Summarize("vendor/model", results), results, time.Date(2026, 10, 16, 14, 3, 0, 0, time.UTC))
+	assert.Contains(t, r, "**1/1 (100.0%)**", "a note does not fail the case")
+	assert.NotContains(t, r, "## Провалы")
+	_, notes, ok := strings.Cut(r, "## Замечания")
+	require.True(t, ok)
+	assert.Contains(t, notes, "### n1 (add)")
+	assert.Contains(t, notes, "сумма 350 упомянута 2 раз(а)")
+}
+
 func TestRenderReport(t *testing.T) {
 	r := RenderReport(Summarize("vendor/model", sampleResults()), sampleResults(), time.Date(2026, 10, 16, 14, 3, 0, 0, time.UTC))
 	assert.Contains(t, r, "# Evals: `vendor/model`")

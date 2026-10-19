@@ -150,25 +150,26 @@ func TestResolveDate(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestCheckFlagsConfirmationRepeatedByModel(t *testing.T) {
+func TestNotesFlagConfirmationRepeatedByModel(t *testing.T) {
 	s := seeded(t)
 	coffee := domain.Expense{ID: 999, Amount: 35000, Category: domain.CategoryFood, SpentAt: today, Comment: "кофе"}
 	exp := Expect{Created: []ExpenseMatch{{Amount: "350"}}}
 	out := Outcome{Diff: Diff{Created: []domain.Expense{coffee}}, Changes: []agent.Change{{Kind: agent.ChangeAdd, Expense: coffee}}}
 
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября"
-	assert.Empty(t, Check(exp, s, out, today))
+	assert.Empty(t, Notes(out))
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗа неделю — 1 350 ₽."
-	assert.Empty(t, Check(exp, s, out, today), "1 350 is not 350")
+	assert.Empty(t, Notes(out), "1 350 is not 350")
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗаписано: кофе за 350 ₽"
-	assert.NotEmpty(t, Check(exp, s, out, today), "the model restated the confirmation")
+	assert.NotEmpty(t, Notes(out), "the model restated the confirmation")
+	assert.Empty(t, Check(exp, s, out, today), "a restatement is a note, not a failure")
 
 	// Added, then corrected in the same turn: two changes with the same amount.
 	moved := coffee
 	moved.SpentAt = today.AddDate(0, 0, -1)
 	out.Changes = append(out.Changes, agent.Change{Kind: agent.ChangeUpdate, Expense: moved, Before: &coffee, Patched: agent.PatchedFields{Date: true}})
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\nИзменил: кофе — 350 ₽, еда, 14 октября (было 15 октября)"
-	assert.Empty(t, Check(exp, s, out, today))
+	assert.Empty(t, Notes(out))
 
 	// An amount update names the old amount too.
 	pricier := coffee

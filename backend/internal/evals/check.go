@@ -2,6 +2,7 @@ package evals
 
 import (
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -109,19 +110,27 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 			fail("в ответе не должно быть %q", s)
 		}
 	}
-	// Each change's amount is confirmed once (an update also names the old amount); more
-	// mentions mean the change was restated. Independent of how the agent detects restatements.
-	for amount, want := range confirmedAmounts(out.Changes) {
-		if got := countNumber(out.Reply, amount); got > want {
-			fail("подтверждение изменений повторено: сумма %s упомянута %d раз(а), изменений с ней %d", amount, got, want)
-		}
-	}
 	for _, tool := range exp.Tools {
 		if !slices.Contains(out.Tools, tool) {
 			fail("не вызван инструмент %s", tool)
 		}
 	}
 	return fails
+}
+
+// Notes lists flaws of a reply that do not fail the case. Each change's amount is confirmed
+// once (an update also names the old amount); more mentions mean the model restated a change
+// the agent did not catch. The facts are still right, so it is a note, not a failure; the check
+// is independent of how the agent detects restatements.
+func Notes(out Outcome) []string {
+	var notes []string
+	want := confirmedAmounts(out.Changes)
+	for _, amount := range slices.Sorted(maps.Keys(want)) {
+		if got := countNumber(out.Reply, amount); got > want[amount] {
+			notes = append(notes, fmt.Sprintf("подтверждение изменений повторено: сумма %s упомянута %d раз(а), изменений с ней %d", amount, got, want[amount]))
+		}
+	}
+	return notes
 }
 
 var numberPattern = regexp.MustCompile(`\d+(?:[ \x{00a0}\x{202f}]\d{3})*`)

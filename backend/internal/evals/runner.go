@@ -28,6 +28,7 @@ type Runner struct {
 type Result struct {
 	Case     Case
 	Failures []string
+	Notes    []string // flaws that do not fail the case (see Notes)
 	Reply    string
 	Tools    []string
 	Steps    []domain.TraceStep // raw tool calls with args and results
@@ -99,7 +100,9 @@ func (r *Runner) runCase(ctx context.Context, c Case) Result {
 		res.Tools = append(res.Tools, s.Tool)
 	}
 	diff := ComputeDiff(before, repo.Snapshot())
-	res.Failures = Check(c.Expect, seeded, Outcome{Diff: diff, Reply: out.Reply, Tools: res.Tools, Changes: out.Changes}, domain.DateOf(Now))
+	outcome := Outcome{Diff: diff, Reply: out.Reply, Tools: res.Tools, Changes: out.Changes}
+	res.Failures = Check(c.Expect, seeded, outcome, domain.DateOf(Now))
+	res.Notes = Notes(outcome)
 	return res
 }
 
