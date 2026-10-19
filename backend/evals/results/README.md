@@ -7,16 +7,34 @@
 
 | Модель | Пройдено | Ошибки провайдера | Всего | Задержка | Стоимость прогона | Последний полный прогон |
 |---|---|---|---|---|---|---|
-| `deepseek/deepseek-v4.1-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 2.9 с | $0.0114 | [отчёт](runs/2026-10-19_14-46-58_deepseek_deepseek-v4.1-flash.md) |
-| `qwen/qwen3.8-omni-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 6.4 с | $0.0160 | [отчёт](runs/2026-10-19_14-48-14_qwen_qwen3.8-omni-flash.md) |
-| `anthropic/claude-haiku-5.5` | 100.0% (45/45) | 0 | 100.0% (45/45) | 2.2 с | $0.0316 | [отчёт](runs/2026-10-19_14-39-54_anthropic_claude-haiku-5.5.md) |
-| `google/gemini-3.8-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 11.8 с | $0.1859 | [отчёт](runs/2026-10-19_14-46-21_google_gemini-3.8-flash.md) |
-| `openai/gpt-6-luna` | 88.1% (37/42) | 3 (неполный прогон) | 82.2% (37/45) | 20.1 с | $0.0042 | [отчёт](runs/2026-10-19_14-43-57_openai_gpt-6-luna.md) |
+| `deepseek/deepseek-v4.1-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 3.4 с | $0.0087 | [отчёт](runs/2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md) |
+| `anthropic/claude-haiku-5.5` | 100.0% (45/45) | 0 | 100.0% (45/45) | 2.6 с | $0.0312 | [отчёт](runs/2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md) |
+| `google/gemini-3.8-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 17.7 с | $0.2012 | [отчёт](runs/2026-10-19_15-24-25_google_gemini-3.8-flash.md) |
+| `openai/gpt-6-luna` | 93.3% (42/45) | 0 | 93.3% (42/45) | 4.9 с | $0.0050 | [отчёт](runs/2026-10-19_15-32-36_openai_gpt-6-luna.md) |
+| `qwen/qwen3.8-omni-flash` | 97.6% (41/42) | 3 (неполный прогон) | 91.1% (41/45) | 7.7 с | $0.0150 | [отчёт](runs/2026-10-19_15-27-35_qwen_qwen3.8-omni-flash.md) |
 
 ## История прогонов
 
 Каждый прогон, включая частичные (`-filter`) и повторные, сохраняется в `runs/` и не перезаписывается.
 
+- [2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-19_15-32-36_openai_gpt-6-luna.md](runs/2026-10-19_15-32-36_openai_gpt-6-luna.md)
+- [2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md](runs/2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md)
+- [2026-10-19_15-27-35_qwen_qwen3.8-omni-flash.md](runs/2026-10-19_15-27-35_qwen_qwen3.8-omni-flash.md)
+- [2026-10-19_15-26-07_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_15-26-07_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-19_15-24-25_google_gemini-3.8-flash.md](runs/2026-10-19_15-24-25_google_gemini-3.8-flash.md)
+- [2026-10-19_15-20-58_openai_gpt-6-luna.md](runs/2026-10-19_15-20-58_openai_gpt-6-luna.md)
+- [2026-10-19_15-19-29_anthropic_claude-haiku-5.5.md](runs/2026-10-19_15-19-29_anthropic_claude-haiku-5.5.md)
+- [2026-10-19_15-13-56_qwen_qwen3.8-omni-flash.md](runs/2026-10-19_15-13-56_qwen_qwen3.8-omni-flash.md)
+- [2026-10-19_15-12-35_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_15-12-35_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-19_15-12-00_google_gemini-3.8-flash.md](runs/2026-10-19_15-12-00_google_gemini-3.8-flash.md)
+- [2026-10-19_15-08-48_openai_gpt-6-luna.md](runs/2026-10-19_15-08-48_openai_gpt-6-luna.md)
+- [2026-10-19_15-07-55_anthropic_claude-haiku-5.5.md](runs/2026-10-19_15-07-55_anthropic_claude-haiku-5.5.md)
+- [2026-10-19_15-06-28_qwen_qwen3.8-omni-flash.md](runs/2026-10-19_15-06-28_qwen_qwen3.8-omni-flash.md)
+- [2026-10-19_15-05-14_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_15-05-14_deepseek_deepseek-v4.1-flash.md)
+- [2026-10-19_15-04-41_google_gemini-3.8-flash.md](runs/2026-10-19_15-04-41_google_gemini-3.8-flash.md)
+- [2026-10-19_15-01-41_openai_gpt-6-luna.md](runs/2026-10-19_15-01-41_openai_gpt-6-luna.md)
+- [2026-10-19_15-00-26_anthropic_claude-haiku-5.5.md](runs/2026-10-19_15-00-26_anthropic_claude-haiku-5.5.md)
 - [2026-10-19_14-48-14_qwen_qwen3.8-omni-flash.md](runs/2026-10-19_14-48-14_qwen_qwen3.8-omni-flash.md)
 - [2026-10-19_14-46-58_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_14-46-58_deepseek_deepseek-v4.1-flash.md)
 - [2026-10-19_14-46-21_google_gemini-3.8-flash.md](runs/2026-10-19_14-46-21_google_gemini-3.8-flash.md)

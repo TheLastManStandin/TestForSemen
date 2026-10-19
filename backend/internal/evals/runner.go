@@ -111,7 +111,13 @@ func (r *Runner) runCase(ctx context.Context, c Case) Result {
 func IsProviderError(err error) bool {
 	var apiErr *llm.APIError
 	if errors.As(err, &apiErr) {
-		return apiErr.Status == http.StatusRequestTimeout || apiErr.Status == http.StatusTooManyRequests || apiErr.Status >= 500
+		switch apiErr.Status {
+		// The key is invalid, expired or out of credits: the run says nothing about the agent.
+		case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden,
+			http.StatusRequestTimeout, http.StatusTooManyRequests:
+			return true
+		}
+		return apiErr.Status >= 500
 	}
 	// net.Error includes *url.Error from the HTTP client. It also matches local failures
 	// such as DNS resolution or a bad base URL, so a misconfigured run shows up as

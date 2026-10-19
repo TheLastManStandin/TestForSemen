@@ -77,6 +77,8 @@ func TestRunnerSeparatesProviderErrors(t *testing.T) {
 	errs := map[string]error{
 		"rate":     &llm.APIError{Status: 429, Message: "rate limited"},
 		"gateway":  &llm.APIError{Status: 502, Message: "bad gateway"},
+		"credits":  &llm.APIError{Status: 402, Message: "requires more credits"},
+		"expired":  &llm.APIError{Status: 401, Message: "API key expired"},
 		"timeout":  fmt.Errorf("llm request: %w", context.DeadlineExceeded),
 		"conn":     fmt.Errorf("llm request: %w", &url.Error{Op: "Post", URL: "https://x", Err: errors.New("connection reset")}),
 		"badreq":   &llm.APIError{Status: 400, Message: "invalid tool schema"},
