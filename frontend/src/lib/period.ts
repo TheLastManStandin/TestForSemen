@@ -10,10 +10,29 @@ export const PRESETS: { value: Preset; label: string }[] = [
 
 const DAY_MS = 86_400_000;
 
-/** Today as "YYYY-MM-DD" in the family's time zone (Settings.timezone), as the bot counts it. */
+// Creating an Intl formatter is costly and "today" is read on every render.
+const dayFormatters = new Map<string, Intl.DateTimeFormat>();
+
+/** Today as "YYYY-MM-DD" in the family's time zone (Settings.timezone), as the bot counts it. Throws on an unknown zone. */
 export function todayISO(timeZone: string, now: Date = new Date()): string {
-  // en-CA formats dates as YYYY-MM-DD.
-  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+  let f = dayFormatters.get(timeZone);
+  if (!f) {
+    // en-CA formats dates as YYYY-MM-DD.
+    f = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    dayFormatters.set(timeZone, f);
+  }
+  return f.format(now);
+}
+
+/** Whether the browser knows the IANA time zone. */
+export function isValidTimeZone(timeZone: string): boolean {
+  if (!timeZone) return false;
+  try {
+    todayISO(timeZone);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function utc(iso: string): Date {

@@ -19,6 +19,12 @@ import (
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/httpapi/gen"
 )
 
+// maxBodyBytes bounds a request body; expenses are a few hundred bytes.
+const maxBodyBytes = 1 << 20
+
+// errBadJSON marks a body that is not exactly one JSON value.
+var errBadJSON = errors.New("malformed JSON body")
+
 // validateRequests rejects requests that do not follow api/openapi.yaml before they reach the
 // generated handlers, which decode leniently: unknown fields are ignored and a missing field is
 // indistinguishable from its zero value. Paths outside the spec pass through untouched.
@@ -47,6 +53,9 @@ func validateRequests(prefix string, next http.Handler) (http.Handler, error) {
 			return
 		}
 		if err == nil {
+			if in.Body != nil {
+				in.Body = http.MaxBytesReader(w, in.Body, maxBodyBytes)
+			}
 			err = singleJSONValue(in)
 		}
 		if err == nil {
@@ -81,29 +90,40 @@ func singleJSONValue(r *http.Request) error {
 	dec := json.NewDecoder(bytes.NewReader(data))
 	var v json.RawMessage
 	if err := dec.Decode(&v); err != nil {
-		return fmt.Errorf("некорректный JSON: %w", err)
+		return fmt.Errorf("%w: %w", errBadJSON, err)
 	}
 	if err := dec.Decode(&v); !errors.Is(err, io.EOF) {
-		return errors.New("некорректный JSON: данные после значения")
+		return fmt.Errorf("%w: data after the value", errBadJSON)
 	}
 	return nil
 }
 
 // writeRequestProblem answers a value that breaks the schema with 422 and the offending field
 // (a body path or a parameter name), as the panel shows field errors next to the inputs.
-// Anything else, such as malformed JSON or an unparsable parameter, is a 400.
+// Malformed JSON, an unparsable parameter and the like are 400, an oversized body is 413.
+// Details are user-facing, so they are Russian and do not echo the validator's English text.
 func writeRequestProblem(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
 	var re *openapi3filter.RequestError
 	var se *openapi3.SchemaError
-	if errors.As(err, &re) && errors.As(err, &se) {
+	switch {
+	case errors.As(err, &tooLarge):
+		writeProblem(w, http.StatusRequestEntityTooLarge, "Слишком большой запрос", fmt.Sprintf("тело запроса больше %d КБ", maxBodyBytes>>10), nil)
+	case errors.Is(err, errBadJSON):
+		writeProblem(w, http.StatusBadRequest, "Некорректный запрос", "некорректный JSON", nil)
+	case errors.As(err, &re) && errors.As(err, &se):
 		field, message := describeSchemaError(se)
 		if re.Parameter != nil {
 			field = re.Parameter.Name
 		}
 		writeProblem(w, http.StatusUnprocessableEntity, "Ошибка валидации", message, []gen.FieldError{{Field: field, Message: message}})
-		return
+	case errors.As(err, &re) && re.Parameter != nil:
+		writeProblem(w, http.StatusBadRequest, "Некорректный запрос", fmt.Sprintf("некорректный параметр %q", re.Parameter.Name), nil)
+	case errors.As(err, &re) && re.RequestBody != nil:
+		writeProblem(w, http.StatusBadRequest, "Некорректный запрос", "некорректное тело запроса", nil)
+	default:
+		writeProblem(w, http.StatusBadRequest, "Некорректный запрос", "запрос не соответствует API", nil)
 	}
-	writeProblem(w, http.StatusBadRequest, "Некорректный запрос", err.Error(), nil)
 }
 
 // describeSchemaError names the field (dot-separated JSON path) and explains the error in Russian.

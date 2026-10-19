@@ -46,9 +46,11 @@ func TestLoadMissingRequired(t *testing.T) {
 
 func TestLoadBadTimezone(t *testing.T) {
 	env := baseEnv()
-	env["APP_TIMEZONE"] = "Mars/Olympus"
-	_, err := config.LoadEnv(env)
-	assert.ErrorContains(t, err, "APP_TIMEZONE")
+	for _, tz := range []string{"Mars/Olympus", "Local"} {
+		env["APP_TIMEZONE"] = tz
+		_, err := config.LoadEnv(env)
+		assert.ErrorContains(t, err, "APP_TIMEZONE", tz)
+	}
 }
 
 func TestParseMembersErrors(t *testing.T) {

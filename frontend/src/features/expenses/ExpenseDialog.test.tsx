@@ -87,6 +87,28 @@ describe("ExpenseDialog async results", () => {
     expect(mutateAsync.mock.calls[0][0].id).toBe(A.id);
   });
 
+  it("keeps the reload button of the next expense usable while a stale reload is pending", async () => {
+    const user = userEvent.setup();
+    const conflict = new ApiError(409, { title: "Conflict", status: 409, detail: "Трата изменена" });
+    mutateAsync.mockRejectedValueOnce(conflict).mockRejectedValueOnce(conflict);
+    refresh.mockReturnValueOnce(new Promise(() => {}));
+
+    const view = render(dialog(true, A));
+    await user.clear(amount());
+    await user.type(amount(), "150");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    await user.click(await screen.findByRole("button", { name: "Обновить данные" }));
+
+    view.rerender(dialog(false, A));
+    view.rerender(dialog(true, B));
+    await user.clear(amount());
+    await user.type(amount(), "250");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    const reload = (await screen.findByRole("button", { name: /^Обнов/ })) as HTMLButtonElement;
+    expect(reload.textContent).toBe("Обновить данные");
+    expect(reload.disabled).toBe(false);
+  });
+
   it("does not close another expense when an earlier save finishes late", async () => {
     const user = userEvent.setup();
     const save = deferred<Expense>();

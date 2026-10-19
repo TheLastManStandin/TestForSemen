@@ -59,7 +59,9 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   // A 409 is shown inside the dialog: a toast is not clickable while the modal dialog blocks the page.
   const [conflictState, setConflict] = useState<{ source: Expense; message: string } | null>(null);
   const conflict = expense && conflictState?.source === expense ? conflictState.message : null;
-  const [reloading, setReloading] = useState(false);
+  // The expense a conflict reload is running for; tagged like the alert, so a stale reload does not lock the next one.
+  const [reloadingFor, setReloadingFor] = useState<Expense | null>(null);
+  const reloading = !!expense && reloadingFor === expense;
   const form = useForm<FormValues>({ resolver: zodResolver(schema), defaultValues: initialValues(expense, defaultMemberId, today()) });
   const { errors, isSubmitting } = form.formState;
 
@@ -87,7 +89,7 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
   const reloadAfterConflict = async (source: Expense) => {
     const session = sessionRef.current;
     const current = () => session !== null && sessionRef.current === session;
-    setReloading(true);
+    setReloadingFor(source);
     try {
       const fresh = await refreshExpense(source.id);
       if (!current()) return;
@@ -104,7 +106,7 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         setConflict({ source, message: `Не удалось обновить данные: ${err instanceof Error ? err.message : "ошибка сети"}` });
       }
     } finally {
-      if (current()) setReloading(false);
+      setReloadingFor((cur) => (cur === source ? null : cur));
     }
   };
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 )
@@ -93,6 +94,9 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 	if len(changes) > 0 {
 		parts = append(parts, confirmChanges(changes, today))
 	}
+	if len(changes) > 0 {
+		modelText = dropRestatedConfirmations(modelText)
+	}
 	switch modelText = strings.TrimSpace(modelText); {
 	case modelText != "":
 		parts = append(parts, modelText)
@@ -107,6 +111,55 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 		return reply, ErrEmptyReply
 	}
 	return reply, nil
+}
+
+// confirmationVerbs open a sentence in which the model restates a change (compared lowercased, ё as е).
+var confirmationVerbs = []string{"записал", "добавил", "внес", "сохранил", "изменил", "исправил", "обновил", "поменял", "удалил", "готово"}
+
+// dropRestatedConfirmations removes the model's own sentences about changes: models restate them
+// despite the prompt, and the confirmation built from the tool results already says it, correctly.
+// The rest of the text (answers, questions) is kept.
+func dropRestatedConfirmations(text string) string {
+	var lines []string
+	for line := range strings.Lines(text) {
+		var kept []string
+		for _, sentence := range splitSentences(line) {
+			if !restatesChange(sentence) {
+				kept = append(kept, sentence)
+			}
+		}
+		if len(kept) > 0 {
+			lines = append(lines, strings.Join(kept, " "))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+// splitSentences cuts a line after ".", "!", "?" or "…" followed by a space.
+func splitSentences(line string) []string {
+	var out []string
+	start := 0
+	runes := []rune(line)
+	for i, r := range runes {
+		last := i == len(runes)-1
+		if last || strings.ContainsRune(".!?…", r) && unicode.IsSpace(runes[i+1]) {
+			if s := strings.TrimSpace(string(runes[start : i+1])); s != "" {
+				out = append(out, s)
+			}
+			start = i + 1
+		}
+	}
+	return out
+}
+
+func restatesChange(sentence string) bool {
+	s := strings.ReplaceAll(strings.ToLower(strings.TrimLeft(sentence, " •-*✅")), "ё", "е")
+	for _, verb := range confirmationVerbs {
+		if strings.HasPrefix(s, verb) {
+			return true
+		}
+	}
+	return false
 }
 
 // describeExpense renders "кофе — 350 ₽, еда, 16 октября".

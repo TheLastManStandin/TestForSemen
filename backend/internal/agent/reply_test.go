@@ -178,3 +178,31 @@ func TestToolCallsWithoutIDGetDistinctIDs(t *testing.T) {
 	assert.Equal(t, a, second[len(second)-2].ToolCallID)
 	assert.Equal(t, b, second[len(second)-1].ToolCallID)
 }
+
+func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
+	for _, c := range []struct{ model, want string }{
+		{"Записал: кофе 350 ₽, 15 октября, еда.", ""},
+		{"Записал обе траты.", ""},
+		{"Готово! Записал кофе.\nЗа неделю — 1 550 ₽.", "За неделю — 1 550 ₽."},
+		{"Добавил кофе. Хочешь посмотреть итоги недели?", "Хочешь посмотреть итоги недели?"},
+		{"За неделю — 1 550 ₽.", "За неделю — 1 550 ₽."},
+	} {
+		t.Run(c.model, func(t *testing.T) {
+			f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{calls(tc("a", "add_expense", addCoffee)), text(c.model)}})
+			res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350"})
+			require.NoError(t, err)
+			want := "Записал: кофе — 350 ₽, еда, 15 октября"
+			if c.want != "" {
+				want += "\n\n" + c.want
+			}
+			assert.Equal(t, want, res.Reply)
+		})
+	}
+}
+
+func TestReplyKeepsModelConfirmationWordsWithoutChanges(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{text("Удалил бы, но таких трат две. Какую именно?")}})
+	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "удали такси"})
+	require.NoError(t, err)
+	assert.Equal(t, "Удалил бы, но таких трат две. Какую именно?", res.Reply)
+}

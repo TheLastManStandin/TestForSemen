@@ -368,15 +368,39 @@ func TestRequestBodiesFollowTheContract(t *testing.T) {
 	assert.Equal(t, created, decode[gen.Expense](t, data), "rejected requests change nothing")
 }
 
-func TestMalformedJSONIsBadRequest(t *testing.T) {
+func TestMalformedRequestsAreBadRequestInRussian(t *testing.T) {
 	e := newEnv(t)
-	for _, body := range []string{`{"user_id":`, `{"user_id":1} {"x":2}`} {
+	post := func(body, contentType string) (*http.Response, gen.Problem) {
 		req, err := http.NewRequest(http.MethodPost, e.srv.URL+"/api/expenses", strings.NewReader(body))
 		require.NoError(t, err)
-		req.Header.Set("Content-Type", "application/json")
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
 		resp, err := http.DefaultClient.Do(req)
 		require.NoError(t, err)
-		resp.Body.Close()
-		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, body)
+		defer resp.Body.Close()
+		data, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		return resp, decode[gen.Problem](t, data)
 	}
+	for _, c := range []struct{ body, contentType, detail string }{
+		{`{"user_id":`, "application/json", "некорректный JSON"},
+		{`{"user_id":1} {"x":2}`, "application/json", "некорректный JSON"},
+		{`{"user_id":1}`, "", "некорректное тело запроса"},
+	} {
+		resp, p := post(c.body, c.contentType)
+		assert.Equal(t, http.StatusBadRequest, resp.StatusCode, c.body)
+		require.NotNil(t, p.Detail, c.body)
+		assert.Equal(t, c.detail, *p.Detail, c.body)
+	}
+
+	resp, data := e.do(t, http.MethodGet, "/api/expenses?limit=abc", nil)
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	p := decode[gen.Problem](t, data)
+	require.NotNil(t, p.Detail)
+	assert.Equal(t, `некорректный параметр "limit"`, *p.Detail)
+
+	resp, p = post(`{"comment":"`+strings.Repeat("x", 2<<20)+`"}`, "application/json")
+	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
+	assert.Equal(t, 413, p.Status)
 }

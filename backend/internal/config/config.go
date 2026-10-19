@@ -66,6 +66,10 @@ func finalize(cfg Config) (Config, error) {
 	}
 	cfg.Members = members
 
+	// "Local" loads but has no IANA name to hand to the panel (GET /api/settings).
+	if cfg.Timezone == "Local" {
+		return Config{}, errors.New("APP_TIMEZONE: must be an IANA time zone name such as Europe/Moscow, not Local")
+	}
 	loc, err := time.LoadLocation(cfg.Timezone)
 	if err != nil {
 		return Config{}, fmt.Errorf("APP_TIMEZONE: %w", err)

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, daysInclusive, eachDay, presetRange, todayISO } from "./period";
+import { addDays, daysInclusive, eachDay, isValidTimeZone, presetRange, todayISO } from "./period";
 
 const today = "2026-10-15"; // Thursday
 
@@ -34,5 +34,11 @@ describe("day helpers", () => {
     expect(todayISO("Europe/Moscow", lateEveningUTC)).toBe("2026-10-19");
     expect(todayISO("America/New_York", lateEveningUTC)).toBe("2026-10-18");
     expect(todayISO("Asia/Tokyo", new Date("2026-12-31T15:00:00Z"))).toBe("2027-01-01");
+  });
+
+  it("tells IANA time zones from invalid ones", () => {
+    expect(isValidTimeZone("Europe/Moscow")).toBe(true);
+    expect(isValidTimeZone("Local")).toBe(false);
+    expect(isValidTimeZone("")).toBe(false);
   });
 });
