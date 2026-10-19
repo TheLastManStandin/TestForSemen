@@ -17,11 +17,13 @@ const dayFormatters = new Map<string, Intl.DateTimeFormat>();
 export function todayISO(timeZone: string, now: Date = new Date()): string {
   let f = dayFormatters.get(timeZone);
   if (!f) {
-    // en-CA formats dates as YYYY-MM-DD.
-    f = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+    f = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
     dayFormatters.set(timeZone, f);
   }
-  return f.format(now);
+  // Built from parts: the formatted string's layout depends on the browser's locale data.
+  const parts = f.formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 /** Whether the browser knows the IANA time zone. */

@@ -286,6 +286,14 @@ func TestToolArgsRequireDeclaredFields(t *testing.T) {
 	assert.Empty(t, errorOf(ok), "an empty comment is a value")
 }
 
+func TestToolArgsEnumsIgnoreCaseAndSpaces(t *testing.T) {
+	a, svc := newToolAgent(t)
+	res := call(t, a, tPapa, "add_expense", `{"amount":"350","category":" Food ","comment":"кофе"}`)
+	require.Empty(t, errorOf(res))
+	assert.Equal(t, domain.CategoryFood, listOwn(t, svc, tPapa)[0].Category)
+	assert.Empty(t, errorOf(call(t, a, tPapa, "find_expenses", `{"period":"THIS_WEEK"}`)))
+}
+
 func TestToolArgsEnforceEnums(t *testing.T) {
 	a, _ := newToolAgent(t)
 	assert.Contains(t, errorOf(call(t, a, tPapa, "find_expenses", `{"sort":"newest"}`)), "sort")

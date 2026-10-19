@@ -245,14 +245,26 @@ func (a *Agent) userLock(userID int64) *sync.Mutex {
 // id; missing ids are filled in. Ids are compared only within a response: some providers
 // number calls anew in each one.
 func uniqueCalls(calls []llm.ToolCall, iter int) []llm.ToolCall {
+	provided := make(map[string]bool, len(calls)) // generated ids must not take one of these
+	for _, c := range calls {
+		provided[c.ID] = true
+	}
 	seen := make(map[string]llm.FunctionCall, len(calls))
+	taken := func(id string) bool {
+		_, ok := seen[id]
+		return ok || provided[id]
+	}
 	out := make([]llm.ToolCall, 0, len(calls))
 	for i, c := range calls {
-		if fn, ok := seen[c.ID]; ok && fn == c.Function {
+		fn, dup := seen[c.ID]
+		if dup && fn == c.Function {
 			continue
 		}
-		if _, taken := seen[c.ID]; taken || c.ID == "" {
+		if dup || c.ID == "" {
 			c.ID = fmt.Sprintf("call_%d_%d", iter, i)
+			for n := 0; taken(c.ID); n++ {
+				c.ID = fmt.Sprintf("call_%d_%d_%d", iter, i, n)
+			}
 		}
 		seen[c.ID] = c.Function
 		out = append(out, c)

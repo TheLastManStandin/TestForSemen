@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError, type Expense, type Member } from "@/api/client";
 import { TimeZoneContext } from "@/hooks/useToday";
@@ -127,6 +128,21 @@ describe("ExpenseDialog async results", () => {
 
     expect(onOpenChange).not.toHaveBeenCalled();
     expect(amount().value).toBe("200");
+  });
+
+  it("still reports a save that fails after the dialog was closed", async () => {
+    const user = userEvent.setup();
+    let fail!: (err: unknown) => void;
+    mutateAsync.mockReturnValueOnce(new Promise((_, reject) => (fail = reject)));
+
+    const view = render(dialog(true, A));
+    await user.clear(amount());
+    await user.type(amount(), "150");
+    await user.click(screen.getByRole("button", { name: "Сохранить" }));
+    view.rerender(dialog(false, A));
+    await act(async () => fail(new ApiError(500, { title: "Внутренняя ошибка", status: 500 })));
+
+    expect(toast.error).toHaveBeenCalledWith("Изменения не сохранены: Внутренняя ошибка");
   });
 
   it("applies a conflict reload to the expense it was made for", async () => {

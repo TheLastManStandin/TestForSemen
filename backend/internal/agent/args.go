@@ -130,10 +130,14 @@ func (s argSchema) normalize(raw []byte) ([]byte, error) {
 		var str string
 		isEnumStr := len(p.Enum) > 0 && json.Unmarshal(v, &str) == nil
 		switch {
-		case optional && (string(v) == "null" || isEnumStr && str == ""):
+		case optional && (string(v) == "null" || isEnumStr && strings.TrimSpace(str) == ""):
 			delete(fields, name)
-		case isEnumStr && !slices.Contains(p.Enum, str):
-			return nil, &argError{err: fmt.Errorf("поле %q: недопустимое значение %q, ожидается одно из: %s", name, str, strings.Join(p.Enum, ", "))}
+		case isEnumStr:
+			i := slices.IndexFunc(p.Enum, func(e string) bool { return strings.EqualFold(e, strings.TrimSpace(str)) })
+			if i < 0 {
+				return nil, &argError{err: fmt.Errorf("поле %q: недопустимое значение %q, ожидается одно из: %s", name, str, strings.Join(p.Enum, ", "))}
+			}
+			fields[name], _ = json.Marshal(p.Enum[i]) // canonical spelling for the tool
 		}
 	}
 	for _, name := range s.Required {

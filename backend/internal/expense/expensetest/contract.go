@@ -277,8 +277,10 @@ func RunRepositoryContract(t *testing.T, newRepo Factory) {
 		r := setup(t)
 		e := insert(t, r, Papa.TelegramID, 100, domain.CategoryOther, "2026-10-10", "")
 
-		cur, err := r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(200))}, nil)
+		mama := Mama.TelegramID
+		cur, err := r.Update(ctx, e.ID, expense.Patch{Amount: ptr(domain.Money(200)), UserID: &mama}, nil)
 		require.NoError(t, err)
+		require.Equal(t, Mama.Name, cur.MemberName)
 
 		deleted, err := r.Delete(ctx, e.ID, nil)
 		require.NoError(t, err)

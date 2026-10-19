@@ -146,6 +146,21 @@ func TestToolCallIDSharedByDifferentCallsRunsEach(t *testing.T) {
 	assert.Equal(t, b, second[len(second)-1].ToolCallID)
 }
 
+func TestGeneratedToolCallIDsDoNotCollideWithProviderIDs(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(tc("call_0_1", "add_expense", addCoffee), tc("", "add_expense", `{"amount":"1200","category":"transport","comment":"такси"}`)),
+		text(""),
+	}})
+
+	_, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350 и такси 1200"})
+	require.NoError(t, err)
+	second := f.llm.requests[1].Messages
+	assistant := second[len(second)-3]
+	require.Len(t, assistant.ToolCalls, 2)
+	assert.NotEqual(t, assistant.ToolCalls[0].ID, assistant.ToolCalls[1].ID)
+	assert.Len(t, own(t, f.svc, papa), 2)
+}
+
 func TestToolCallIDsMayRepeatAcrossResponses(t *testing.T) {
 	// Some providers number calls per response ("0", "1", ...), so ids are unique only within one.
 	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
@@ -186,6 +201,10 @@ func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
 		{"Готово! Записал кофе.\nЗа неделю — 1 550 ₽.", "За неделю — 1 550 ₽."},
 		{"Добавил кофе. Хочешь посмотреть итоги недели?", "Хочешь посмотреть итоги недели?"},
 		{"За неделю — 1 550 ₽.", "За неделю — 1 550 ₽."},
+		// Sentences that ask or explain something are not confirmations.
+		{"Записал кофе, но такси не нашёл — уточни дату?", "Записал кофе, но такси не нашёл — уточни дату?"},
+		{"Удалил бы такси, но их два.", "Удалил бы такси, но их два."},
+		{"Внести ещё одну трату?", "Внести ещё одну трату?"},
 	} {
 		t.Run(c.model, func(t *testing.T) {
 			f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{calls(tc("a", "add_expense", addCoffee)), text(c.model)}})

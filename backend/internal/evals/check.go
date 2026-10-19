@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/agent"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 )
 
@@ -107,8 +108,8 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 			fail("в ответе не должно быть %q", s)
 		}
 	}
-	// The agent confirms each change with one line; more lines mean the model restated them.
-	if n := confirmationLines(reply); n > out.Changes {
+	// The agent confirms each change with one line; more lines mean a restatement got through.
+	if n := confirmationLines(out.Reply); out.Changes > 0 && n > out.Changes {
 		fail("подтверждение изменений повторено: %d строк на %d изменений", n, out.Changes)
 	}
 	for _, tool := range exp.Tools {
@@ -119,12 +120,11 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 	return fails
 }
 
-// confirmationLines counts reply lines that start like a change confirmation.
-func confirmationLines(normalizedReply string) int {
+// confirmationLines counts reply lines that only confirm a change, as the agent judges it.
+func confirmationLines(reply string) int {
 	n := 0
-	for line := range strings.Lines(normalizedReply) {
-		line = strings.TrimLeft(line, " •-")
-		if strings.HasPrefix(line, "записал") || strings.HasPrefix(line, "изменил") || strings.HasPrefix(line, "удалил") {
+	for line := range strings.Lines(reply) {
+		if agent.RestatesChange(line) {
 			n++
 		}
 	}

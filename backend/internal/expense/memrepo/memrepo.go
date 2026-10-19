@@ -177,6 +177,7 @@ func (r *Repo) Delete(_ context.Context, id int64, owner *int64) (domain.Expense
 		return domain.Expense{}, domain.ErrNotFound
 	}
 	delete(r.items, id)
+	cur.MemberName = r.members[cur.UserID]
 	return cur, nil
 }
 

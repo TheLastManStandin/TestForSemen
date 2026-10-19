@@ -130,7 +130,11 @@ export function ExpenseDialog({ open, onOpenChange, expense, members, defaultMem
         }
         if (current()) setOpen(false);
       } catch (err) {
-        if (!current()) return;
+        if (!current()) {
+          // The form is gone or shows another expense; the member must still learn the save failed.
+          toast.error(`Изменения не сохранены: ${err instanceof Error ? err.message : "ошибка сети"}`);
+          return;
+        }
         const message = conflictMessage(err);
         if (expense && message) {
           setConflict({ source: expense, message });

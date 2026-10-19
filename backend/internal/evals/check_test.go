@@ -165,4 +165,5 @@ func TestCheckFlagsConfirmationRepeatedByModel(t *testing.T) {
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\nИзменил: кофе — 350 ₽, еда, 14 октября (было 15 октября)"
 	assert.Empty(t, Check(exp, s, out, today))
 	assert.Empty(t, Check(Expect{}, s, Outcome{Reply: "Ничего не удалил: уточни, какую трату"}, today))
+	assert.Empty(t, Check(Expect{}, s, Outcome{Reply: "Удалил бы, но таких трат две. Какую?"}, today), "no changes, nothing to restate")
 }

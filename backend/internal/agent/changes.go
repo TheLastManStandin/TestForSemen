@@ -93,8 +93,6 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 	var parts []string
 	if len(changes) > 0 {
 		parts = append(parts, confirmChanges(changes, today))
-	}
-	if len(changes) > 0 {
 		modelText = dropRestatedConfirmations(modelText)
 	}
 	switch modelText = strings.TrimSpace(modelText); {
@@ -113,8 +111,15 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 	return reply, nil
 }
 
-// confirmationVerbs open a sentence in which the model restates a change (compared lowercased, ё as е).
-var confirmationVerbs = []string{"записал", "добавил", "внес", "сохранил", "изменил", "исправил", "обновил", "поменял", "удалил", "готово"}
+// confirmationVerbs open a sentence in which the model restates a change (lowercased, ё as е).
+var confirmationVerbs = map[string]bool{
+	"записал": true, "записала": true, "добавил": true, "добавила": true, "внес": true, "внесла": true,
+	"сохранил": true, "сохранила": true, "изменил": true, "изменила": true, "исправил": true, "исправила": true,
+	"обновил": true, "обновила": true, "поменял": true, "поменяла": true, "удалил": true, "удалила": true, "готово": true,
+}
+
+// hedgeWords mark a sentence that explains, qualifies or asks rather than just confirms.
+var hedgeWords = map[string]bool{"но": true, "бы": true, "не": true, "однако": true}
 
 // dropRestatedConfirmations removes the model's own sentences about changes: models restate them
 // despite the prompt, and the confirmation built from the tool results already says it, correctly.
@@ -124,7 +129,7 @@ func dropRestatedConfirmations(text string) string {
 	for line := range strings.Lines(text) {
 		var kept []string
 		for _, sentence := range splitSentences(line) {
-			if !restatesChange(sentence) {
+			if !RestatesChange(sentence) {
 				kept = append(kept, sentence)
 			}
 		}
@@ -152,14 +157,23 @@ func splitSentences(line string) []string {
 	return out
 }
 
-func restatesChange(sentence string) bool {
-	s := strings.ReplaceAll(strings.ToLower(strings.TrimLeft(sentence, " •-*✅")), "ё", "е")
-	for _, verb := range confirmationVerbs {
-		if strings.HasPrefix(s, verb) {
-			return true
+// RestatesChange reports whether a sentence only restates a completed change, like
+// «Записал кофе.» or «Готово!». A question or a sentence with «но», «бы», «не» is kept:
+// it explains a failure or asks something the confirmation does not say. Evals use it too.
+func RestatesChange(sentence string) bool {
+	if strings.Contains(sentence, "?") {
+		return false
+	}
+	words := strings.FieldsFunc(strings.ReplaceAll(strings.ToLower(sentence), "ё", "е"), func(r rune) bool { return !unicode.IsLetter(r) })
+	if len(words) == 0 || !confirmationVerbs[words[0]] {
+		return false
+	}
+	for _, w := range words[1:] {
+		if hedgeWords[w] {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
 // describeExpense renders "кофе — 350 ₽, еда, 16 октября".
