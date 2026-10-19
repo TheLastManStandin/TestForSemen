@@ -11,9 +11,10 @@ import (
 
 // Outcome is what one agent run produced.
 type Outcome struct {
-	Diff  Diff
-	Reply string
-	Tools []string
+	Diff    Diff
+	Reply   string
+	Tools   []string
+	Changes int // completed add/update/delete calls; an add then an update of it is one diff entry but two changes
 }
 
 var replyNormalizer = strings.NewReplacer("\u00a0", " ", "\u202f", " ", "ё", "е", "Ё", "е")
@@ -107,9 +108,8 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 		}
 	}
 	// The agent confirms each change with one line; more lines mean the model restated them.
-	changes := len(out.Diff.Created) + len(out.Diff.Updated) + len(out.Diff.Deleted)
-	if n := confirmationLines(reply); n > changes {
-		fail("подтверждение изменений повторено: %d строк на %d изменений", n, changes)
+	if n := confirmationLines(reply); n > out.Changes {
+		fail("подтверждение изменений повторено: %d строк на %d изменений", n, out.Changes)
 	}
 	for _, tool := range exp.Tools {
 		if !slices.Contains(out.Tools, tool) {

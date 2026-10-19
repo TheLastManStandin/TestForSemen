@@ -99,7 +99,7 @@ func (r *Runner) runCase(ctx context.Context, c Case) Result {
 		res.Tools = append(res.Tools, s.Tool)
 	}
 	diff := ComputeDiff(before, repo.Snapshot())
-	res.Failures = Check(c.Expect, seeded, Outcome{Diff: diff, Reply: out.Reply, Tools: res.Tools}, domain.DateOf(Now))
+	res.Failures = Check(c.Expect, seeded, Outcome{Diff: diff, Reply: out.Reply, Tools: res.Tools, Changes: len(out.Changes)}, domain.DateOf(Now))
 	return res
 }
 
