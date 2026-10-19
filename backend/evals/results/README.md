@@ -8,15 +8,17 @@
 | Модель | Пройдено | Ошибки провайдера | Всего | Задержка | Стоимость прогона | Последний полный прогон |
 |---|---|---|---|---|---|---|
 | `deepseek/deepseek-v4.1-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 3.4 с | $0.0087 | [отчёт](runs/2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md) |
+| `qwen/qwen3.8-omni-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 6.1 с | $0.0152 | [отчёт](runs/2026-10-19_20-47-29_qwen_qwen3.8-omni-flash.md) |
 | `anthropic/claude-haiku-5.5` | 100.0% (45/45) | 0 | 100.0% (45/45) | 2.6 с | $0.0312 | [отчёт](runs/2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md) |
-| `google/gemini-3.8-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 17.7 с | $0.2012 | [отчёт](runs/2026-10-19_15-24-25_google_gemini-3.8-flash.md) |
+| `google/gemini-3.8-flash` | 100.0% (45/45) | 0 | 100.0% (45/45) | 9.0 с | $0.1813 | [отчёт](runs/2026-10-19_20-46-17_google_gemini-3.8-flash.md) |
 | `openai/gpt-6-luna` | 93.3% (42/45) | 0 | 93.3% (42/45) | 4.9 с | $0.0050 | [отчёт](runs/2026-10-19_15-32-36_openai_gpt-6-luna.md) |
-| `qwen/qwen3.8-omni-flash` | 97.6% (41/42) | 3 (неполный прогон) | 91.1% (41/45) | 7.7 с | $0.0150 | [отчёт](runs/2026-10-19_15-27-35_qwen_qwen3.8-omni-flash.md) |
 
 ## История прогонов
 
 Каждый прогон, включая частичные (`-filter`) и повторные, сохраняется в `runs/` и не перезаписывается.
 
+- [2026-10-19_20-47-29_qwen_qwen3.8-omni-flash.md](runs/2026-10-19_20-47-29_qwen_qwen3.8-omni-flash.md)
+- [2026-10-19_20-46-17_google_gemini-3.8-flash.md](runs/2026-10-19_20-46-17_google_gemini-3.8-flash.md)
 - [2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md](runs/2026-10-19_15-34-43_deepseek_deepseek-v4.1-flash.md)
 - [2026-10-19_15-32-36_openai_gpt-6-luna.md](runs/2026-10-19_15-32-36_openai_gpt-6-luna.md)
 - [2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md](runs/2026-10-19_15-31-31_anthropic_claude-haiku-5.5.md)
