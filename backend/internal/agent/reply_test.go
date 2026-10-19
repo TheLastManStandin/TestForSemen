@@ -211,6 +211,7 @@ func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
 		{"Готово, за октябрь теперь 12 400 ₽.", "Готово, за октябрь теперь 12 400 ₽."},
 		// The verb need not come first.
 		{"Кофе за 350 ₽ перенёс на сегодня.", ""},
+		{"Поправил на 350 ₽", ""},
 		{"Сейчас у тебя записано 5 трат.", "Сейчас у тебя записано 5 трат."},
 	} {
 		t.Run(c.model, func(t *testing.T) {

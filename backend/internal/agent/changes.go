@@ -117,7 +117,7 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 
 // confirmationStems start a word with which the model reports a change («Записал», «Записано»,
 // «Добавлено», «Зафиксировал», «перенёс», «Готово»); lowercased, ё as е.
-var confirmationStems = []string{"записал", "записан", "добав", "внес", "сохран", "измен", "исправ", "обнов", "помен", "перенес", "удал", "зафиксир", "учел", "учла", "готово"}
+var confirmationStems = []string{"записал", "записан", "добав", "внес", "сохран", "измен", "исправ", "обнов", "помен", "поправ", "перенес", "занес", "отмет", "удал", "зафиксир", "учел", "учла", "готово"}
 
 // hedgeWords mark a sentence that explains, qualifies or asks rather than reports.
 var hedgeWords = map[string]bool{"но": true, "бы": true, "не": true, "однако": true}
