@@ -404,3 +404,17 @@ func TestMalformedRequestsAreBadRequestInRussian(t *testing.T) {
 	assert.Equal(t, http.StatusRequestEntityTooLarge, resp.StatusCode)
 	assert.Equal(t, 413, p.Status)
 }
+
+func TestRejectedRequestsAreLogged(t *testing.T) {
+	var logs bytes.Buffer
+	e := newEnv(t, func(d *httpapi.Deps) { d.Log = slog.New(slog.NewTextHandler(&logs, nil)) })
+	req, err := http.NewRequest(http.MethodPost, e.srv.URL+"/api/expenses", strings.NewReader(`{"user_id":`))
+	require.NoError(t, err)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(t, err)
+	resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	assert.Contains(t, logs.String(), "request rejected")
+	assert.Contains(t, logs.String(), "unexpected EOF", "the cause stays in the log, not in the response")
+}

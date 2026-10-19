@@ -45,7 +45,15 @@ func errorHandler(log *slog.Logger) func(http.ResponseWriter, *http.Request, err
 
 // badRequest handles malformed parameters and bodies rejected by generated code. Requests are
 // validated against the spec first (validate.go), so this is a fallback; the generated error
-// text is English and stays out of the user-facing detail.
-func badRequest(w http.ResponseWriter, _ *http.Request, _ error) {
-	writeProblem(w, http.StatusBadRequest, "Некорректный запрос", "параметры или тело запроса не соответствуют API", nil)
+// text is English, so it is logged and stays out of the user-facing detail.
+func badRequest(log *slog.Logger) func(http.ResponseWriter, *http.Request, error) {
+	return func(w http.ResponseWriter, r *http.Request, err error) {
+		logRejected(log, r, err)
+		writeProblem(w, http.StatusBadRequest, "Некорректный запрос", "параметры или тело запроса не соответствуют API", nil)
+	}
+}
+
+// logRejected records why a request was rejected: the response detail is deliberately generic.
+func logRejected(log *slog.Logger, r *http.Request, err error) {
+	log.InfoContext(r.Context(), "request rejected", "method", r.Method, "path", r.URL.Path, "err", err)
 }

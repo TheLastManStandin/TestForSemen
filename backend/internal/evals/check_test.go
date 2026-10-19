@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/TheLastManStandin/TestForSemen/backend/internal/agent"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/domain"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/expense"
 	"github.com/TheLastManStandin/TestForSemen/backend/internal/expense/memrepo"
@@ -49,7 +50,7 @@ func TestCheckCreated(t *testing.T) {
 	s := seeded(t)
 	exp := Expect{Created: []ExpenseMatch{{Amount: "350", Category: "food", Date: "today", Comment: "кофе"}}}
 
-	ok := Outcome{Diff: Diff{Created: []domain.Expense{coffee(35000, today)}}, Reply: "Записал", Changes: 1}
+	ok := Outcome{Diff: Diff{Created: []domain.Expense{coffee(35000, today)}}, Reply: "Записал"}
 	assert.Empty(t, Check(exp, s, ok, today))
 
 	wrongAmount := Outcome{Diff: Diff{Created: []domain.Expense{coffee(45000, today)}}}
@@ -153,17 +154,26 @@ func TestCheckFlagsConfirmationRepeatedByModel(t *testing.T) {
 	s := seeded(t)
 	coffee := domain.Expense{ID: 999, Amount: 35000, Category: domain.CategoryFood, SpentAt: today, Comment: "кофе"}
 	exp := Expect{Created: []ExpenseMatch{{Amount: "350"}}}
-	out := Outcome{Diff: Diff{Created: []domain.Expense{coffee}}, Changes: 1}
+	out := Outcome{Diff: Diff{Created: []domain.Expense{coffee}}, Changes: []agent.Change{{Kind: agent.ChangeAdd, Expense: coffee}}}
 
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября"
 	assert.Empty(t, Check(exp, s, out, today))
-	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗа неделю — 1 550 ₽."
-	assert.Empty(t, Check(exp, s, out, today))
-	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗаписал кофе за 350 ₽"
+	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗа неделю — 1 350 ₽."
+	assert.Empty(t, Check(exp, s, out, today), "1 350 is not 350")
+	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\n\nЗаписано: кофе за 350 ₽"
 	assert.NotEmpty(t, Check(exp, s, out, today), "the model restated the confirmation")
-	out.Changes = 2 // added, then corrected in the same turn
+
+	// Added, then corrected in the same turn: two changes with the same amount.
+	moved := coffee
+	moved.SpentAt = today.AddDate(0, 0, -1)
+	out.Changes = append(out.Changes, agent.Change{Kind: agent.ChangeUpdate, Expense: moved, Before: &coffee, Patched: agent.PatchedFields{Date: true}})
 	out.Reply = "Записал: кофе — 350 ₽, еда, 15 октября\nИзменил: кофе — 350 ₽, еда, 14 октября (было 15 октября)"
 	assert.Empty(t, Check(exp, s, out, today))
-	assert.Empty(t, Check(Expect{}, s, Outcome{Reply: "Ничего не удалил: уточни, какую трату"}, today))
-	assert.Empty(t, Check(Expect{}, s, Outcome{Reply: "Удалил бы, но таких трат две. Какую?"}, today), "no changes, nothing to restate")
+
+	// An amount update names the old amount too.
+	pricier := coffee
+	pricier.Amount = 45000
+	out.Changes = []agent.Change{{Kind: agent.ChangeUpdate, Expense: pricier, Before: &coffee, Patched: agent.PatchedFields{Amount: true}}}
+	assert.Equal(t, map[string]int{"450": 1, "350": 1}, confirmedAmounts(out.Changes))
+	assert.Equal(t, 1, countNumber("Изменил: кофе — 450 ₽, еда, 15 октября (было 350 ₽)", "350"))
 }

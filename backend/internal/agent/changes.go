@@ -3,6 +3,8 @@ package agent
 import (
 	"encoding/json"
 	"errors"
+	"regexp"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -85,21 +87,23 @@ func confirmChanges(changes []Change, today time.Time) string {
 	return strings.Join(lines, "\n")
 }
 
-// composeReply builds the member's reply for a turn the model finished. Changes are confirmed
-// from the tool results, never from the model's wording; the model's text follows as the answer
-// to the rest of the message. failures are the distinct user-facing reasons calls of the last tool
-// batch failed. ErrEmptyReply means the model ended the turn without changing or saying anything.
+// composeReply builds the member's reply for a turn the model finished, from facts first:
+// the confirmation of completed changes (from the tool results, never from the model's wording),
+// then why calls of the last tool batch failed (distinct user-facing reasons), then the model's
+// text with its own claims about changes removed. ErrEmptyReply means the model ended a turn
+// that changed nothing without saying anything.
 func composeReply(modelText string, changes []Change, failures []string, today time.Time) (string, error) {
+	confirmation := confirmChanges(changes, today)
+	modelText = strings.TrimSpace(dropRestatedChanges(modelText, confirmation))
 	var parts []string
-	if len(changes) > 0 {
-		parts = append(parts, confirmChanges(changes, today))
-		modelText = dropRestatedConfirmations(modelText)
+	if confirmation != "" {
+		parts = append(parts, confirmation)
 	}
-	switch modelText = strings.TrimSpace(modelText); {
-	case modelText != "":
-		parts = append(parts, modelText)
-	case len(failures) > 0:
+	if len(failures) > 0 {
 		parts = append(parts, "Не получилось: "+strings.Join(failures, "; ")+".")
+	}
+	if modelText != "" {
+		parts = append(parts, modelText)
 	}
 	reply := strings.Join(parts, "\n\n")
 	if len(changes) == 0 && modelText == "" {
@@ -111,25 +115,30 @@ func composeReply(modelText string, changes []Change, failures []string, today t
 	return reply, nil
 }
 
-// confirmationVerbs open a sentence in which the model restates a change (lowercased, ё as е).
-var confirmationVerbs = map[string]bool{
-	"записал": true, "записала": true, "добавил": true, "добавила": true, "внес": true, "внесла": true,
-	"сохранил": true, "сохранила": true, "изменил": true, "изменила": true, "исправил": true, "исправила": true,
-	"обновил": true, "обновила": true, "поменял": true, "поменяла": true, "удалил": true, "удалила": true, "готово": true,
-}
+// confirmationStems start the first word of a sentence in which the model reports a change
+// («Записал», «Записано», «Добавлено», «Зафиксировал», «Готово»); lowercased, ё as е.
+var confirmationStems = []string{"записал", "записан", "добав", "внес", "сохран", "измен", "исправ", "обнов", "помен", "удал", "зафиксир", "учел", "учла", "готово"}
 
-// hedgeWords mark a sentence that explains, qualifies or asks rather than just confirms.
+// hedgeWords mark a sentence that explains, qualifies or asks rather than reports.
 var hedgeWords = map[string]bool{"но": true, "бы": true, "не": true, "однако": true}
 
-// dropRestatedConfirmations removes the model's own sentences about changes: models restate them
-// despite the prompt, and the confirmation built from the tool results already says it, correctly.
-// The rest of the text (answers, questions) is kept.
-func dropRestatedConfirmations(text string) string {
+// numberPattern matches numbers as the bot writes them, with thousands separated by spaces.
+var numberPattern = regexp.MustCompile(`\d+(?:[ \x{00a0}\x{202f}]\d{3})*`)
+
+// dropRestatedChanges removes the model's own sentences that report changes. Models do it
+// despite the prompt, and the confirmation built from the tool results already says it
+// correctly; with no changes such a sentence claims something that did not happen. A sentence
+// that also carries a number the confirmation does not have is kept: it says something new.
+func dropRestatedChanges(text, confirmation string) string {
+	known := map[string]bool{}
+	for _, n := range numbers(confirmation) {
+		known[n] = true
+	}
 	var lines []string
 	for line := range strings.Lines(text) {
 		var kept []string
 		for _, sentence := range splitSentences(line) {
-			if !RestatesChange(sentence) {
+			if !reportsChange(sentence) || confirmation != "" && hasNewNumber(sentence, known) {
 				kept = append(kept, sentence)
 			}
 		}
@@ -157,15 +166,14 @@ func splitSentences(line string) []string {
 	return out
 }
 
-// RestatesChange reports whether a sentence only restates a completed change, like
-// «Записал кофе.» or «Готово!». A question or a sentence with «но», «бы», «не» is kept:
-// it explains a failure or asks something the confirmation does not say. Evals use it too.
-func RestatesChange(sentence string) bool {
+// reportsChange tells whether a sentence reports a change, like «Записал кофе.» or «Готово!».
+// A question or a sentence with «но», «бы», «не» explains or asks something and is not one.
+func reportsChange(sentence string) bool {
 	if strings.Contains(sentence, "?") {
 		return false
 	}
 	words := strings.FieldsFunc(strings.ReplaceAll(strings.ToLower(sentence), "ё", "е"), func(r rune) bool { return !unicode.IsLetter(r) })
-	if len(words) == 0 || !confirmationVerbs[words[0]] {
+	if len(words) == 0 || !slices.ContainsFunc(confirmationStems, func(stem string) bool { return strings.HasPrefix(words[0], stem) }) {
 		return false
 	}
 	for _, w := range words[1:] {
@@ -174,6 +182,24 @@ func RestatesChange(sentence string) bool {
 		}
 	}
 	return true
+}
+
+func hasNewNumber(sentence string, known map[string]bool) bool {
+	return slices.ContainsFunc(numbers(sentence), func(n string) bool { return !known[n] })
+}
+
+// numbers lists the numbers in s with separators removed: "1 200 ₽, 14 октября" → 1200, 14.
+func numbers(s string) []string {
+	found := numberPattern.FindAllString(s, -1)
+	for i, n := range found {
+		found[i] = strings.Map(func(r rune) rune {
+			if unicode.IsDigit(r) {
+				return r
+			}
+			return -1
+		}, n)
+	}
+	return found
 }
 
 // describeExpense renders "кофе — 350 ₽, еда, 16 октября".

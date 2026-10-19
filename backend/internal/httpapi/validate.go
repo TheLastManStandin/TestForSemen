@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net/http"
 	"slices"
@@ -28,7 +29,7 @@ var errBadJSON = errors.New("malformed JSON body")
 // validateRequests rejects requests that do not follow api/openapi.yaml before they reach the
 // generated handlers, which decode leniently: unknown fields are ignored and a missing field is
 // indistinguishable from its zero value. Paths outside the spec pass through untouched.
-func validateRequests(prefix string, next http.Handler) (http.Handler, error) {
+func validateRequests(prefix string, next http.Handler, log *slog.Logger) (http.Handler, error) {
 	spec, err := gen.GetSpec()
 	if err != nil {
 		return nil, fmt.Errorf("load openapi spec: %w", err)
@@ -65,6 +66,7 @@ func validateRequests(prefix string, next http.Handler) (http.Handler, error) {
 			})
 		}
 		if err != nil {
+			logRejected(log, r, err)
 			writeRequestProblem(w, err)
 			return
 		}

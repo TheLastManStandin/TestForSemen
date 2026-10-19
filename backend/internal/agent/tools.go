@@ -147,11 +147,12 @@ func (a *Agent) execute(ctx context.Context, userID int64, call llm.ToolCall) to
 		o.change = &cr.change
 	}
 	if err != nil {
-		if isInternal(err) {
+		f := classifyToolError(err)
+		if f.internal {
 			a.log.ErrorContext(ctx, "agent tool failed", "tool", call.Function.Name, "user_id", userID, "err", err)
 		}
-		result = map[string]string{"error": toolError(err)}
-		o.failure = failureReason(err)
+		result = map[string]string{"error": f.forModel}
+		o.failure = f.forMember
 	}
 	data, mErr := json.Marshal(result)
 	if mErr != nil {
@@ -445,41 +446,27 @@ func optionalCategory(s string) (*domain.Category, error) {
 	return &c, nil
 }
 
-// toolError is the message the model sees; it never leaks internals.
-func toolError(err error) string {
+// toolFailure describes a failed tool call once for both audiences: forModel is the tool result
+// it can act on (with field names), forMember goes into the reply (without tool or field names).
+// Neither leaks internals; internal marks errors that are logged.
+type toolFailure struct {
+	forModel, forMember string
+	internal            bool
+}
+
+func classifyToolError(err error) toolFailure {
 	var ve *domain.ValidationError
 	var ae *argError
 	switch {
 	case errors.As(err, &ve):
-		return ve.Message + " (" + ve.Field + ")"
+		return toolFailure{forModel: ve.Message + " (" + ve.Field + ")", forMember: ve.Message}
 	case errors.Is(err, domain.ErrNotFound):
-		return "трата не найдена"
+		return toolFailure{forModel: "трата не найдена", forMember: "трата не найдена"}
 	case errors.As(err, &ae):
-		return ae.Error()
+		return toolFailure{forModel: ae.Error(), forMember: "не удалось разобрать запрос"}
 	case errors.Is(err, errUnknownTool):
-		return err.Error()
+		return toolFailure{forModel: err.Error(), forMember: "не удалось разобрать запрос"}
 	default:
-		return "внутренняя ошибка, попробуй позже"
+		return toolFailure{forModel: "внутренняя ошибка, попробуй позже", forMember: "внутренняя ошибка, попробуй позже", internal: true}
 	}
-}
-
-// failureReason explains a failed call to the member, without tool or field names.
-func failureReason(err error) string {
-	var ve *domain.ValidationError
-	switch {
-	case errors.As(err, &ve):
-		return ve.Message
-	case errors.Is(err, domain.ErrNotFound):
-		return "трата не найдена"
-	case isInternal(err):
-		return "внутренняя ошибка, попробуй позже"
-	default:
-		return "не удалось разобрать запрос"
-	}
-}
-
-func isInternal(err error) bool {
-	var ve *domain.ValidationError
-	var ae *argError
-	return !errors.As(err, &ve) && !errors.As(err, &ae) && !errors.Is(err, domain.ErrNotFound) && !errors.Is(err, errUnknownTool)
 }

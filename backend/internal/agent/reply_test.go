@@ -23,8 +23,7 @@ func TestReplyConfirmsChangesFromToolResults(t *testing.T) {
 	assert.Empty(t, f.mem.Traces()[0].Error)
 
 	h := history(t, f, papa)
-	assert.Empty(t, h[len(h)-1].Content, "history keeps the model's own words, so it does not learn to repeat confirmations")
-	assert.Equal(t, want, f.mem.Traces()[0].Output)
+	assert.Equal(t, want, h[len(h)-1].Content, "history keeps what the member saw; an empty assistant text is rejected by some providers")
 }
 
 func TestReplyAppendsModelTextAfterConfirmation(t *testing.T) {
@@ -205,6 +204,11 @@ func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
 		{"Записал кофе, но такси не нашёл — уточни дату?", "Записал кофе, но такси не нашёл — уточни дату?"},
 		{"Удалил бы такси, но их два.", "Удалил бы такси, но их два."},
 		{"Внести ещё одну трату?", "Внести ещё одну трату?"},
+		// Other phrasings of the same confirmation.
+		{"Записано: кофе 350 ₽.", ""},
+		{"Зафиксировал трату. Добавлено.", ""},
+		// A sentence with a number the confirmation does not have carries new information.
+		{"Готово, за октябрь теперь 12 400 ₽.", "Готово, за октябрь теперь 12 400 ₽."},
 	} {
 		t.Run(c.model, func(t *testing.T) {
 			f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{calls(tc("a", "add_expense", addCoffee)), text(c.model)}})
@@ -217,6 +221,46 @@ func TestReplyDropsConfirmationsRestatedByModel(t *testing.T) {
 			assert.Equal(t, want, res.Reply)
 		})
 	}
+}
+
+func TestReplyDropsClaimedChangesThatDidNotHappen(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(tc("a", "add_expense", `{"amount":"0","category":"food","comment":"кофе"}`)),
+		text("Записал: кофе — 350 ₽, еда, сегодня."),
+	}})
+	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе"})
+	require.NoError(t, err)
+	assert.Equal(t, "Не получилось: сумма должна быть больше нуля.", res.Reply)
+	assert.Empty(t, own(t, f.svc, papa))
+}
+
+func TestReplyAlwaysReportsFailuresOfTheLastBatch(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(tc("a", "add_expense", addCoffee), tc("b", "add_expense", `{"amount":"0","category":"transport","comment":"такси"}`)),
+		text("Записал кофе и такси. За сегодня 1 350 ₽."),
+	}})
+	res, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350, такси"})
+	require.NoError(t, err)
+	assert.Equal(t, "Записал: кофе — 350 ₽, еда, 15 октября\n\nНе получилось: сумма должна быть больше нуля.\n\nЗа сегодня 1 350 ₽.", res.Reply)
+}
+
+func TestGeneratedToolCallIDsDifferBetweenTurns(t *testing.T) {
+	f := newFixture(t, &scriptedLLM{replies: []llm.ChatResponse{
+		calls(tc("", "add_expense", addCoffee)), text(""),
+		calls(tc("", "add_expense", addCoffee)), text(""),
+	}})
+	for range 2 {
+		_, err := f.agent.Run(ctx, agent.Input{UserID: papa, Text: "кофе 350"})
+		require.NoError(t, err)
+	}
+	ids := map[string]bool{}
+	for _, m := range history(t, f, papa) {
+		for _, c := range m.ToolCalls {
+			assert.False(t, ids[c.ID], "id %s repeats in history", c.ID)
+			ids[c.ID] = true
+		}
+	}
+	assert.Len(t, ids, 2)
 }
 
 func TestReplyKeepsModelConfirmationWordsWithoutChanges(t *testing.T) {

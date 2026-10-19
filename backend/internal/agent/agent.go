@@ -7,7 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
@@ -143,7 +145,8 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 	turn := []llm.Message{user}
 
 	var res Result
-	var failures []string // why calls of the latest tool batch failed, for the reply
+	var failures []string                          // why calls of the latest tool batch failed, for the reply
+	runID := strconv.FormatUint(rand.Uint64(), 36) // makes generated tool call ids unique in history
 	temperature := a.cfg.Temperature
 	for iter := range a.cfg.MaxIterations {
 		resp, err := a.llm.Chat(ctx, llm.ChatRequest{Model: a.cfg.Model, Messages: msgs, Tools: toolDefs, Temperature: &temperature})
@@ -162,14 +165,15 @@ func (a *Agent) run(ctx context.Context, in Input) (Result, error) {
 
 		reply := resp.Message
 		reply.Role = llm.RoleAssistant
-		reply.ToolCalls = uniqueCalls(reply.ToolCalls, iter)
+		reply.ToolCalls = uniqueCalls(reply.ToolCalls, fmt.Sprintf("%s_%d", runID, iter))
 		msgs = append(msgs, reply)
 		turn = append(turn, reply)
 
 		if len(reply.ToolCalls) == 0 {
-			// History keeps the model's own words: the facts are in the tool results, and stored
-			// confirmations would teach the model to restate them.
 			res.Reply, err = composeReply(reply.Content, res.Changes, failures, a.svc.Today())
+			// History keeps what the member saw: it is never empty (some providers reject an empty
+			// assistant text), and confirmations the model might copy from it are dropped anyway.
+			turn[len(turn)-1].Content = res.Reply
 			a.saveTurn(ctx, in.UserID, turn)
 			return res, err
 		}
@@ -243,8 +247,9 @@ func (a *Agent) userLock(userID int64) *sync.Mutex {
 // result. A call repeated with the same id, name and arguments is a duplicate and runs once;
 // a different call that reuses an id (some providers give all parallel calls one id) gets a new
 // id; missing ids are filled in. Ids are compared only within a response: some providers
-// number calls anew in each one.
-func uniqueCalls(calls []llm.ToolCall, iter int) []llm.ToolCall {
+// number calls anew in each one. prefix is unique per run and step, so generated ids do not
+// repeat across turns kept in history.
+func uniqueCalls(calls []llm.ToolCall, prefix string) []llm.ToolCall {
 	provided := make(map[string]bool, len(calls)) // generated ids must not take one of these
 	for _, c := range calls {
 		provided[c.ID] = true
@@ -261,9 +266,9 @@ func uniqueCalls(calls []llm.ToolCall, iter int) []llm.ToolCall {
 			continue
 		}
 		if dup || c.ID == "" {
-			c.ID = fmt.Sprintf("call_%d_%d", iter, i)
+			c.ID = fmt.Sprintf("call_%s_%d", prefix, i)
 			for n := 0; taken(c.ID); n++ {
-				c.ID = fmt.Sprintf("call_%d_%d_%d", iter, i, n)
+				c.ID = fmt.Sprintf("call_%s_%d_%d", prefix, i, n)
 			}
 		}
 		seen[c.ID] = c.Function

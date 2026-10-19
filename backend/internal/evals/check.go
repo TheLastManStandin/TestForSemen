@@ -2,6 +2,7 @@ package evals
 
 import (
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ type Outcome struct {
 	Diff    Diff
 	Reply   string
 	Tools   []string
-	Changes int // completed add/update/delete calls; an add then an update of it is one diff entry but two changes
+	Changes []agent.Change // completed add/update/delete calls; an add then an update of it is one diff entry but two changes
 }
 
 var replyNormalizer = strings.NewReplacer("\u00a0", " ", "\u202f", " ", "ё", "е", "Ё", "е")
@@ -108,9 +109,12 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 			fail("в ответе не должно быть %q", s)
 		}
 	}
-	// The agent confirms each change with one line; more lines mean a restatement got through.
-	if n := confirmationLines(out.Reply); out.Changes > 0 && n > out.Changes {
-		fail("подтверждение изменений повторено: %d строк на %d изменений", n, out.Changes)
+	// Each change's amount is confirmed once (an update also names the old amount); more
+	// mentions mean the change was restated. Independent of how the agent detects restatements.
+	for amount, want := range confirmedAmounts(out.Changes) {
+		if got := countNumber(out.Reply, amount); got > want {
+			fail("подтверждение изменений повторено: сумма %s упомянута %d раз(а), изменений с ней %d", amount, got, want)
+		}
 	}
 	for _, tool := range exp.Tools {
 		if !slices.Contains(out.Tools, tool) {
@@ -120,11 +124,34 @@ func Check(exp Expect, seeded map[string]domain.Expense, out Outcome, today time
 	return fails
 }
 
-// confirmationLines counts reply lines that only confirm a change, as the agent judges it.
-func confirmationLines(reply string) int {
+var numberPattern = regexp.MustCompile(`\d+(?:[ \x{00a0}\x{202f}]\d{3})*`)
+
+// firstNumber is the first number in s without separators: "1 200 ₽" → "1200".
+func firstNumber(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, numberPattern.FindString(s))
+}
+
+// confirmedAmounts counts how often the confirmation of the changes names each amount.
+func confirmedAmounts(changes []agent.Change) map[string]int {
+	out := map[string]int{}
+	for _, c := range changes {
+		out[firstNumber(c.Expense.Amount.Human())]++
+		if c.Before != nil && c.Patched.Amount && c.Before.Amount != c.Expense.Amount {
+			out[firstNumber(c.Before.Amount.Human())]++
+		}
+	}
+	return out
+}
+
+func countNumber(reply, number string) int {
 	n := 0
-	for line := range strings.Lines(reply) {
-		if agent.RestatesChange(line) {
+	for _, m := range numberPattern.FindAllString(reply, -1) {
+		if firstNumber(m) == number {
 			n++
 		}
 	}

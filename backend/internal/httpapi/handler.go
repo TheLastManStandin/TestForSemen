@@ -33,13 +33,13 @@ func NewHandler(d Deps) http.Handler {
 	}
 	mux := http.NewServeMux()
 	strict := gen.NewStrictHandlerWithOptions(&Server{svc: d.Service, traces: d.Traces}, nil, gen.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  badRequest,
+		RequestErrorHandlerFunc:  badRequest(d.Log),
 		ResponseErrorHandlerFunc: errorHandler(d.Log),
 	})
-	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{BaseURL: "/api", BaseRouter: mux, ErrorHandlerFunc: badRequest})
+	gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{BaseURL: "/api", BaseRouter: mux, ErrorHandlerFunc: badRequest(d.Log)})
 	mux.Handle("GET /api/events", sseHandler(d.StreamsCtx, d.Bus, d.Heartbeat, d.Log))
 	mux.Handle("GET /healthz", healthHandler(d.Health))
-	validated, err := validateRequests("/api", mux)
+	validated, err := validateRequests("/api", mux, d.Log)
 	if err != nil {
 		panic(err) // the spec is embedded at build time, so this is a programming error
 	}
